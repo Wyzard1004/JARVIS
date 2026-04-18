@@ -88,7 +88,7 @@ Expected output shape from the docs:
 Before building AI logic, create the minimum runnable foundation:
 
 1. Fill in `base_station/requirements.txt`.
-2. Expand `base_station/.env.example` with the variables the code will actually need.
+2. Expand `base_station/.env` with the variables the code will actually need.
 3. Put a minimal FastAPI app in `base_station/api/main.py`.
 4. Add a useful root `README.md` with setup and demo steps.
 

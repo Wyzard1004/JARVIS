@@ -13,7 +13,6 @@ Put your real local values in:
 
 Do not put real secrets in:
 
-- `base_station/.env.example`
 - markdown docs
 - Python files
 - git commits
