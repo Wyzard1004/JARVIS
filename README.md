@@ -1,13 +1,13 @@
-# JARVIS: Joint Adaptive Resilient Voice Integrated Swarm
+# JARVIS: Joint Adaptive Relay for Variable Interoperable Swarms
 
-> **Voice-Activated Swarm Coordinator for DDIL Environments**  
+> **Swarm Consensus and Coordination for DDIL Environments**  
 > Critical Ops Hackathon (April 2026)
 
 ## The Pitch
 
-JARVIS is a hardware-in-the-loop swarm coordination system designed for **disconnected, denied, or intermittent (DDIL) communication environments**. Instead of a human operator micromanaging drone flight paths, the operator acts as a node in a decentralized network. 
+JARVIS is a hardware-in-the-loop swarm coordination system for **disconnected, denied, or intermittent (DDIL) environments**. The core problem is not voice control by itself; it is resilient coordination across human operators, relay nodes, and autonomous platforms when links degrade, partition, or disappear.
 
-The operator **speaks naturally**; a local edge-deployed LLM translates speech into strict JSON commands; and the swarm executes coordination logic using a resilient, **leaderless gossip protocol**. All processing happens **entirely offline** on an Nvidia Jetson Orin.
+The current repo is centered on a contested-environment simulation that compares a **leaderless adaptive gossip protocol** against a **leader-based TCP/Raft-style baseline**, visualizes propagation in real time, and reports benchmark data for latency, control-plane bandwidth, and fault tolerance. A local LLM and audio path still exist, but they are best understood as **optional operator interfaces** into the swarm rather than the identity of the project.
 
 ### Hackathon Challenge Statements
 
@@ -16,104 +16,97 @@ The operator **speaks naturally**; a local edge-deployed LLM translates speech i
 
 ---
 
+## What Is Working Now
+
+- **Consensus runtime** in `base_station/core/swarm_logic.py`
+  - Adaptive gossip simulation with retries, TTL, relay fanout, and disruption handling
+  - TCP/Raft-style baseline for comparison
+  - Delivery summaries, mission/search state, object reports, and built-in benchmark data
+- **FastAPI backend** in `base_station/api/main.py`
+  - `GET /health`
+  - `GET /api/swarm-state`
+  - `POST /api/voice-command` for direct structured payloads or text commands
+  - `POST /api/transcribe-command` for optional audio upload
+  - `ws://localhost:8000/ws/swarm` for real-time updates
+- **React command center**
+  - WebSocket-driven graph visualization
+  - Status panel and command history
+  - Push-to-talk UI still present as an optional demo path
+- **Optional AI bridge**
+  - Rule-based and Ollama-backed command parsing
+  - ElevenLabs speech-to-text and text-to-speech helpers
+
+---
+
 ## System Architecture
 
-```
+```text
 +-------------------------------------------+
-|    OPERATOR (Human Node)                  |
-|    speaks: "JARVIS, re-route to Alpha"    |
+| OPERATOR / CONTROL NODE                   |
+| - direct structured command               |
+| - optional text or audio command          |
 +-------------------------------------------+
-              |
-              | Audio (Whisper STT)
-              v
-  +-----------------------------+
-  |  NVIDIA JETSON ORIN         |
-  |  (Base Station)             |
-  |  +---------------------+    |
-  |  | FastAPI Backend     |    |
-  |  | - ai_bridge.py      |    | You are here (4.0.0)
-  |  | - swarm_logic.py    |    |
-  |  | - mqtt_client.py    |    |
-  |  +---------------------+    |
-  |  +---------------------+    |
-  |  | Ollama (Llama-3)    |    | JSON intent parsing
-  |  +---------------------+    |
-  |  +---------------------+    |
-  |  | Mosquitto MQTT      |    | Hardware publishing
-  |  +---------------------+    |
-  +-----------------------------+
-        |              |
-        | WiFi         | ESP-NOW Radio
-        v              v
-  +----------+    +-----------+
-  | REACT    |    | ESP32     |
-  | FRONTEND |    | SWARM     |
-  |          |    | (3x       |
-  | Port:    |    | Gateways) |
-  | 5173     |    | + LEDs    |
-  |          |    |           |
-  | - Graph  |    | (Visual   |
-  |   (D3)   |    |  proof)   |
-  |          |    |           |
-  | - PTT    |    |           |
-  |   Button |    |           |
-  |          |    |           |
-  | - Status |    |           |
-  |   Panel  |    |           |
-  +----------+    +-----------+
+                    |
+                    v
+  +---------------------------------------+
+  | NVIDIA JETSON ORIN (Base Station)     |
+  | FastAPI + swarm_logic + ai_bridge      |
+  | - adaptive gossip                      |
+  | - TCP/Raft baseline                    |
+  | - benchmark + mission state            |
+  +---------------------------------------+
+          |                         |
+          v                         v
+  +------------------+      +------------------+
+  | React UI         |      | MQTT / ESP-NOW   |
+  | - graph view     |      | - gateway node   |
+  | - status panel   |      | - field nodes    |
+  | - command input  |      | - LED proof      |
+  +------------------+      +------------------+
 ```
+
+The current demo topology in code includes:
+
+- a gateway relay
+- two human operator nodes
+- one recon drone
+- two attack drones
+
+That topology can expand later, but the implemented repo today is already organized around contested mesh coordination and consensus behavior.
 
 ---
 
 ## Current Status (April 18, 2026)
 
-### DONE Completed (4.0.0 - Full-Stack Integration)
+### Implemented
 
-- **FastAPI Backend** (Section 4.1)
-  - DONE Health check endpoint (`GET /health`)
-  - DONE WebSocket swarm updates (`/ws/swarm`)
-  - DONE Voice command intake (`POST /api/voice-command`)
-  - DONE Swarm state query (`GET /api/swarm-state`)
-  - DONE CORS + lifecycle hooks
-  - DONE Running successfully on `0.0.0.0:8000`
+- **Swarm coordination runtime**
+  - Adaptive gossip and TCP/Raft-style baseline are both implemented
+  - Benchmark data is surfaced through the runtime and API responses
+  - Search state, propagation order, delivery summaries, and disruption modeling are live
+- **Backend integration**
+  - Swarm logic is wired into FastAPI
+  - Direct payloads can bypass voice parsing
+  - Algorithm selection is supported through request payloads
+- **Frontend integration**
+  - React app connects to the backend over WebSocket
+  - Real-time state is rendered in the graph and status panel
+  - Command history updates when commands are dispatched
+- **AI bridge**
+  - `ai_bridge.py` is implemented with safe fallbacks, rule parsing, and optional Ollama use
+  - Audio transcription and confirmation helpers exist, but they are not the primary focus
 
-- **React Frontend** (Section 4.2)
-  - DONE Vite + React 19 scaffold
-  - DONE D3 force-graph visualization (SwarmGraph.jsx)
-  - DONE Push-to-Talk button with mock transcript (PushToTalkButton.jsx)
-  - DONE System status panel (StatusPanel.jsx)
-  - DONE WebSocket listener (real-time updates)
-  - DONE Tailwind CSS v4 styling
-  - DONE Running successfully on `localhost:5173`
+### In Progress
 
-- **Environment Setup**
-  - DONE `.env` configuration file created
-  - DONE Local `base_station/.env` with required variables documented
-  - DONE `.gitignore` configured (no secrets committed)
+- Wiring MQTT publishing into the live FastAPI dispatch loop
+- Completing ESP32 hardware sync for the physical propagation demo
+- Rebalancing the UI so structured swarm commands are first-class instead of voice-first
+- Expanding scenarios, node types, and contested-network behaviors beyond the current demo topology
 
-- **Dependencies Updated (April 18, 2026)**
-  - DONE FastAPI 0.136.0 (latest)
-  - DONE React 19.2.5 (latest)
-  - DONE Vite 8.0.8 (latest)
-  - DONE Tailwind CSS 4.2.2 (latest)
-  - DONE All security vulnerabilities patched
+### Secondary / Optional
 
-### X In Progress / Blocked
-
-- **AI Bridge** (Section 3.0 - Richard)
-  - X Ollama JSON parsing not yet integrated
-  - X ElevenLabs TTS not yet integrated
-  - Waiting for `base_station/core/ai_bridge.py` implementation
-
-- **Swarm Logic** (Section 2.0 - Giulia)
-  - X NetworkX gossip protocol not yet integrated
-  - X Benchmark simulation not yet integrated
-  - Waiting for `base_station/core/swarm_logic.py` implementation
-
-- **MQTT Publisher** (Section 1.0 - Sebastian)
-  - X Hardware publishing not yet integrated
-  - X ESP32 communication not yet configured
-  - Waiting for `base_station/core/mqtt_client.py` implementation
+- Ollama prompt tuning and parser refinement
+- Audio transcription reliability and TTS polish
 
 ---
 
@@ -123,155 +116,145 @@ The operator **speaks naturally**; a local edge-deployed LLM translates speech i
 
 - Python 3.10+
 - Node.js 18+
-- Virtual environment (venv)
+- Virtual environment support
 
-### Backend Setup
+### Backend Setup (PowerShell)
 
-```bash
+```powershell
 cd base_station
-python3 -m venv venv
-source venv/bin/activate
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 python -m uvicorn api.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-**Verify**: Visit http://localhost:8000/docs - Interactive API explorer opens
+If you prefer bash:
+
+```bash
+cd base_station
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+python -m uvicorn api.main:app --reload --host 0.0.0.0 --port 8000
+```
 
 ### Frontend Setup
 
-```bash
+```powershell
 cd command_center
 npm install
 npm run dev
 ```
 
-**Verify**: http://localhost:5173 - React UI loads with WebSocket "Connected" status
+### Verify
 
-### Both Running
-
-```bash
-# Terminal 1: Backend
-cd base_station && source venv/bin/activate && python -m uvicorn api.main:app --reload
-
-# Terminal 2: Frontend
-cd command_center && npm run dev
-```
+- FastAPI docs open at [http://localhost:8000/docs](http://localhost:8000/docs)
+- React UI opens at [http://localhost:5173](http://localhost:5173)
+- WebSocket state appears in the command center
 
 ---
 
 ## API Endpoints
 
-### Health & Status
+### Health
 
-```bash
+```http
 GET /health
 ```
 
-Response:
-```json
-{
-  "status": "operational",
-  "subsystems": {
-    "api": "online"
-  }
-}
-```
+### Command Intake
 
-### Voice Command
-
-```bash
+```http
 POST /api/voice-command
 Content-Type: application/json
+```
 
+The route name is legacy from the earlier demo framing, but it already supports **direct structured swarm commands** in addition to transcribed text.
+
+Example direct payload:
+
+```json
 {
-  "transcribed_text": "JARVIS, re-route swarm to Grid Alpha"
+  "origin": "soldier-1",
+  "target_location": "Grid Alpha",
+  "action_code": "SEARCH",
+  "consensus_algorithm": "gossip"
 }
 ```
+
+Example text payload:
+
+```json
+{
+  "transcribed_text": "JARVIS, move swarm to Grid Alpha",
+  "consensus_algorithm": "raft"
+}
+```
+
+### Optional Audio Path
+
+```http
+POST /api/transcribe-command
+Content-Type: multipart/form-data
+```
+
+Uploads microphone audio, runs the optional transcription/parsing path, and dispatches the resulting swarm intent.
 
 ### Swarm State
 
-```bash
+```http
 GET /api/swarm-state
 ```
 
-Response:
-```json
-{
-  "nodes": [
-    {"id": "node_1", "status": "active", "x": 0, "y": 0},
-    {"id": "node_2", "status": "idle", "x": 100, "y": 50}
-  ],
-  "edges": [
-    {"source": "node_1", "target": "node_2"}
-  ],
-  "timestamp": "2026-04-18T12:00:00Z"
-}
-```
+Returns nodes, edges, active nodes, propagation order, delivery summary, benchmark data, and supported algorithms.
 
-### WebSocket (Real-Time)
+### WebSocket
 
-```
+```text
 ws://localhost:8000/ws/swarm
 ```
 
-Subscribe to gossip updates:
-```json
-{
-  "event": "gossip_update",
-  "active_nodes": ["node_1", "node_2"],
-  "target_x": 150,
-  "target_y": -50,
-  "status": "swarming"
-}
-```
+Current event naming still uses `gossip_update` for compatibility with the existing frontend, even when the selected algorithm is the TCP/Raft baseline.
 
 ---
 
 ## Project Structure
 
-```
+```text
 jarvis-swarm/
-+-- base_station/                    # Python FastAPI Backend
++-- base_station/
 |   +-- api/
-|   |   +-- main.py                 # FastAPI routes (DONE)
+|   |   +-- main.py                 # FastAPI routes and dispatch
 |   +-- core/
-|   |   +-- ai_bridge.py            # LLM + TTS (TODO - Richard)
-|   |   +-- swarm_logic.py          # Gossip protocol (TODO - Giulia)
-|   |   +-- mqtt_client.py          # Hardware pub/sub (TODO - Sebastian)
-|   +-- requirements.txt            # Python deps (DONE)
+|   |   +-- ai_bridge.py            # Optional text/audio command adapter
+|   |   +-- swarm_logic.py          # Consensus simulation and benchmark runtime
+|   |   +-- mqtt_client.py          # Hardware messaging client
+|   +-- requirements.txt
 |
-+-- command_center/                  # React Frontend (Vite)
++-- command_center/
 |   +-- src/
-|   |   +-- App.jsx                 # Main app (DONE)
-|   |   +-- main.jsx                # Entry point (DONE)
-|   |   +-- index.css               # Tailwind styles (DONE)
+|   |   +-- App.jsx
 |   |   +-- components/
-|   |       +-- SwarmGraph.jsx      # D3 visualization (DONE)
-|   |       +-- PushToTalkButton.jsx # Voice input (DONE)
-|   |       +-- StatusPanel.jsx     # System status (DONE)
-|   +-- index.html                  # HTML root (DONE)
-|   +-- package.json                # Node deps (DONE)
-|   +-- vite.config.js              # Vite config (DONE)
-|   +-- tailwind.config.js          # Tailwind (DONE)
+|   |       +-- SwarmGraph.jsx      # Real-time topology visualization
+|   |       +-- PushToTalkButton.jsx # Optional audio input UI
+|   |       +-- StatusPanel.jsx
 |
-+-- hardware/                        # Arduino / C++
++-- hardware/
 |   +-- gateway_node/
-|   |   +-- gateway_node.ino        # ESP32-1 (TODO)
 |   +-- field_node/
-|       +-- field_node.ino          # ESP32-2/3 (TODO)
 |
-+-- simulations/                     # Math & Benchmarks
-|   +-- tcp_vs_gossip.py            # Perf comparison (TODO)
-|   +-- outputs/                    # Generated charts
++-- simulations/
+|   +-- tcp_vs_gossip.py            # Standalone comparison utilities
 |
 +-- docs/
-|   +-- mission_canvas.md           # Business logic
-|   +-- SECTION_4_SETUP.md          # Detailed setup guide
-|   +-- overview.md                 # High-level pitch
+|   +-- SECTION_4_SETUP.md
+|   +-- frozen_command_examples.md
+|   +-- richard_ai_bridge_sketch.md
 |
-+-- base_station/.env               # Local config (DONE)
-+-- .gitignore                       # Git setup (DONE)
-+-- README.md                        # This file (DONE)
++-- overview.md
++-- development_gameplan.md
++-- RICHARD_HANDOFF_GAMEPLAN.md
++-- README.md
 ```
 
 ---
@@ -279,74 +262,35 @@ jarvis-swarm/
 ## Testing Checklist
 
 - [x] FastAPI backend starts without errors
-- [x] React frontend loads at http://localhost:5173
-- [x] WebSocket connection shows "connected" status
-- [x] Build completes with Tailwind CSS v4
-- [x] All npm security vulnerabilities resolved
-- [ ] Push-to-Talk button records audio
-- [ ] Voice transcription via Whisper
-- [ ] LLM intent parsing returns valid JSON
-- [ ] Swarm graph updates from WebSocket
-- [ ] ESP32 LEDs flash in gossip order
-- [ ] Benchmark results generated and visualized
+- [x] React frontend loads and connects over WebSocket
+- [x] Swarm state endpoint returns nodes, edges, and benchmark data
+- [x] Adaptive gossip and TCP/Raft baseline are both exposed by the backend
+- [x] Benchmark results are attached to consensus responses
+- [ ] MQTT publishing is wired into live dispatch
+- [ ] ESP32 gateway and field-node demo are synchronized end to end
+- [ ] Structured command controls are first-class in the UI
+- [ ] Additional topology roles and scenarios are added beyond the current demo set
 
 ---
 
-## What's Next
+## Current Demo Story
 
-### Richard (Section 3.0 - AI Pipeline)
-
-1. Implement `base_station/core/ai_bridge.py`
-   - Connect to local Ollama API
-   - Prompt engineer Llama-3 for JSON intent extraction
-   - Integrate ElevenLabs SDK for TTS confirmations
-   - Handle parsing errors gracefully
-
-2. Expose: `process_voice_command(transcribed_text) -> Dict[intent, target, action]`
-
-### Giulia (Section 2.0 - Swarm Logic)
-
-1. Implement `base_station/core/swarm_logic.py`
-   - Initialize NetworkX graph with drone nodes
-   - Implement Gossip protocol propagation algorithm
-   - Calculate multi-hop latency & bandwidth metrics
-   - Compare TCP-based coordination vs. Gossip
-
-2. Expose: `calculate_gossip_path(parsed_intent) -> Dict[nodes, edges, timestamps]`
-
-3. Generate benchmark charts for the pitch deck
-
-### Sebastian (Section 1.0 - Hardware)
-
-1. Implement `base_station/core/mqtt_client.py`
-   - Connect to Mosquitto broker
-   - Publish commands to `swarm/command` topic
-   - Handle connection failures gracefully
-
-2. Program ESP32 firmware
-   - Gateway node: Listen to MQTT, republish via ESP-NOW
-   - Field nodes: Listen to ESP-NOW, toggle LEDs with staggered timing
-
-3. Test radio propagation with mock delays
-
-### William (Section 4.0 - Integration)
-
-1. Wire together all three modules in `api.main:voice_command()`
-2. Refine React animations (4.3.1 - 4.3.2)
-3. Test end-to-end flow: Voice -> LLM -> Gossip -> ESP32s -> UI visualize
-4. Polish UI and prepare demo script
+1. An operator injects a command through the UI, either as a structured control payload or through the optional voice path.
+2. The backend turns that input into a normalized swarm intent.
+3. `swarm_logic.py` executes either adaptive gossip or the TCP/Raft-style baseline.
+4. The result is broadcast to the React UI over WebSocket.
+5. When hardware integration is connected, the same command path can be mirrored to ESP32 nodes over MQTT and ESP-NOW.
+6. The benchmark layer reports why leaderless relay can outperform direct leader-based control in disrupted DDIL conditions.
 
 ---
 
-## Demo Flow
+## Next Steps
 
-1. **User**: Presses Push-to-Talk button and says: *"JARVIS, deploy swarm to Zone B"*
-2. **Frontend**: Records audio, sends to backend
-3. **Backend**: Whisper transcribes -> Ollama parses intent -> Gossip calculates path
-4. **MQTT**: Command published to ESP32 Gateway
-5. **Hardware**: ESP32-1 (Gateway) -> ESP32-2/3 (Field) via ESP-NOW, LEDs flash sequentially
-6. **UI**: Real-time D3 graph pulses red, nodes drift toward target coordinates
-7. **Speaker**: JARVIS confirms: *"Swarm deployed to Zone B. Gossip protocol active."*
+- Make direct structured swarm commands the primary UI path
+- Wire `mqtt_client.py` into the FastAPI dispatch flow
+- Expand disruption scenarios and operational topologies
+- Add more node classes and mission roles as the simulation grows
+- Keep voice, STT, and TTS as optional operator-interface layers instead of the main project story
 
 ---
 
@@ -354,23 +298,24 @@ jarvis-swarm/
 
 | Layer | Component | Tech | Status |
 |-------|-----------|------|--------|
-| **Edge Inference** | Base Station | Nvidia Jetson Orin + Ollama | Ready |
-| **Backend** | API Server | FastAPI + Uvicorn | Running |
-| **Frontend** | UI | React 19 + Vite 8 + Tailwind 4 | Running |
-| **Visualization** | Graph | D3 force simulation | Active |
-| **Voice** | STT/TTS | Whisper (TODO) / ElevenLabs (TODO) | Pending |
-| **Swarm Logic** | Coordination | NetworkX + Gossip (TODO) | Pending |
-| **Messaging** | Pub/Sub | Mosquitto MQTT (TODO) | Pending |
-| **Hardware** | Drones | 3x ESP32 + LEDs (TODO) | Pending |
+| Edge Inference | Base Station | Nvidia Jetson Orin + Ollama | Available |
+| Backend | API Server | FastAPI + Uvicorn | Running |
+| Frontend | UI | React 19 + Vite 8 + Tailwind 4 | Running |
+| Visualization | Graph | D3 force simulation | Active |
+| Consensus | Swarm Runtime | NetworkX + adaptive gossip + TCP/Raft baseline | Active |
+| Operator Interface | Command Parsing | Direct payloads + rules/Ollama | Active |
+| Audio | STT/TTS | ElevenLabs helpers | Optional |
+| Messaging | Pub/Sub | Mosquitto MQTT | In progress |
+| Hardware | Field Demo | ESP32 + ESP-NOW + LEDs | In progress |
 
 ---
 
 ## References
 
-- **Overview**: See [overview.md](overview.md) for full business case
-- **Gameplan**: See [development_gameplan.md](development_gameplan.md) for section breakdown
-- **Setup Guide**: See [docs/SECTION_4_SETUP.md](docs/SECTION_4_SETUP.md) for 4.0.0 details
-- **Repository**: See [repository_structure.md](repository_structure.md) for folder conventions
+- **Overview**: See [overview.md](overview.md)
+- **Gameplan**: See [development_gameplan.md](development_gameplan.md)
+- **Setup Guide**: See [docs/SECTION_4_SETUP.md](docs/SECTION_4_SETUP.md)
+- **Richard Handoff**: See [RICHARD_HANDOFF_GAMEPLAN.md](RICHARD_HANDOFF_GAMEPLAN.md)
 
 ---
 
@@ -381,5 +326,5 @@ Internal hackathon project. All rights reserved.
 ---
 
 **Last Updated**: April 18, 2026  
-**Current Milestone**: 4.0.0 Framework Complete (DONE)  
-**Next Milestone**: 3.0 AI Pipeline Integration (Richard)
+**Current Milestone**: Consensus-first simulation and command center integration  
+**Primary Narrative**: Swarm coordination in contested environments, with voice as an optional interface

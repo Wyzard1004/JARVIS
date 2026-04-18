@@ -1,203 +1,181 @@
 # 4.0.0 Full-Stack Integration Setup Guide
 
-> **Target**: William's section Ã¢â‚¬â€ Full-Stack Integration & Command UI
+> **Target**: Command UI + backend integration for JARVIS
 
-This guide walks you through everything needed to get the FastAPI backend and React frontend running in parallel with the core modules from Richard (ai_bridge) and Giulia (swarm_logic).
+This guide reflects the repo as it exists now: a consensus-first swarm simulation with a working FastAPI backend, React command center, and optional AI/audio adapters.
 
-## What's Been Set Up
+## What Is Already Wired
 
-### Backend (Python / FastAPI)
+### Backend
 
-**File**: [base_station/api/main.py](../base_station/api/main.py)
+File: `base_station/api/main.py`
 
-**Includes**:
-- Ã¢Å“â€¦ FastAPI app skeleton with CORS middleware
-- Ã¢Å“â€¦ Health check endpoint (`GET /health`)
-- Ã¢Å“â€¦ WebSocket connection manager for real-time UI syncing (`/ws/swarm`)
-- Ã¢Å“â€¦ Voice command intake endpoint (`POST /api/voice-command`)
-- Ã¢Å“â€¦ Swarm state query endpoint (`GET /api/swarm-state`)
-- Ã¢Å“â€¦ Lifecycle hooks (startup/shutdown)
-- Ã¢Å“â€¦ TodoPlaceholders for MQTT publisher, AI Bridge, and Swarm Logic integration
+Current endpoints and behavior:
 
-**Dependencies**: [base_station/requirements.txt](../base_station/requirements.txt)
-- `fastapi`, `uvicorn`, `paho-mqtt`, `requests`, `python-dotenv`, `websockets`, `networkx`
+- `GET /health`
+- `GET /api/swarm-state`
+- `POST /api/voice-command`
+  - legacy route name
+  - accepts direct structured swarm payloads
+  - also accepts text commands routed through `ai_bridge.py`
+- `POST /api/transcribe-command`
+  - optional audio upload path
+- `ws://localhost:8000/ws/swarm`
 
-### Frontend (React / Vite)
+The backend is already integrated with:
 
-**Includes**:
-- Ã¢Å“â€¦ [command_center/src/App.jsx](../command_center/src/App.jsx) Ã¢â‚¬â€ Main app component with WebSocket listener
-- Ã¢Å“â€¦ [command_center/src/components/SwarmGraph.jsx](../command_center/src/components/SwarmGraph.jsx) Ã¢â‚¬â€ `react-force-graph` visualization
-- Ã¢Å“â€¦ [command_center/src/components/PushToTalkButton.jsx](../command_center/src/components/PushToTalkButton.jsx) Ã¢â‚¬â€ Microphone input + mock transcript
-- Ã¢Å“â€¦ [command_center/src/components/StatusPanel.jsx](../command_center/src/components/StatusPanel.jsx) Ã¢â‚¬â€ System status display
-- Ã¢Å“â€¦ Tailwind CSS + PostCSS configuration
-- Ã¢Å“â€¦ Vite dev server with proxy to FastAPI backend
+- `base_station/core/swarm_logic.py`
+- `base_station/core/ai_bridge.py`
 
-**Dependencies**: [command_center/package.json](../command_center/package.json)
-- `react`, `react-dom`, `react-force-graph`, `socket.io-client`, `axios`, `tailwindcss`
+It is **not yet fully wired** to `mqtt_client.py` for hardware publishing.
 
-### Environment Variables
+### Frontend
 
-**File**: [.env](.env) (local development)
+Files:
 
-**Use**: `base_station/.env`
+- `command_center/src/App.jsx`
+- `command_center/src/components/SwarmGraph.jsx`
+- `command_center/src/components/StatusPanel.jsx`
+- `command_center/src/components/PushToTalkButton.jsx`
 
-**Required keys**:
-- `ELEVENLABS_API_KEY` - For TTS confirmations
-- `OLLAMA_API_BASE_URL` - Local LLM endpoint
-- `MQTT_BROKER_HOST` / `MQTT_BROKER_PORT` - MQTT settings
-- `FASTAPI_HOST` / `FASTAPI_PORT` - Backend server config
+Current frontend behavior:
 
----
+- opens a WebSocket to the backend
+- renders topology and swarm state in real time
+- tracks command history
+- still exposes push-to-talk as an input path
 
-## Getting Started (4.1 & 4.2)
+The frontend works today, but the repo narrative should treat direct swarm commands and consensus behavior as primary.
 
-### Step 1: Backend Setup (4.1.1 - 4.1.2)
+## Local Setup
 
-```bash
+### Backend (PowerShell)
+
+```powershell
 cd base_station
-python -m venv venv
-source venv/bin/activate
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
+python -m uvicorn api.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-**Test the API**:
-```bash
-cd base_station
-python -m uvicorn api.main:app --reload
-```
+### Frontend
 
-Navigate to http://localhost:8000/docs for the interactive FastAPI UI.
-
-### Step 2: Frontend Setup (4.2.1)
-
-```bash
+```powershell
 cd command_center
-npm install      # or yarn install
-npm run dev      # Starts Vite dev server on port 5173
-```
-
-Open http://localhost:5173 in your browser.
-
----
-
-## Integration Checkpoints
-
-### Checkpoint 1: Backend Ã¢â€ Â Richard's AI Bridge (3.1 & 3.2)
-
-**Where to plug in**: [base_station/api/main.py](../base_station/api/main.py) line ~85
-
-```python
-from core.ai_bridge import AIBridge
-
-# In the voice_command endpoint:
-parsed_intent = await ai_bridge.process_voice_command(transcribed_text)
-```
-
-### Checkpoint 2: Backend Ã¢â€ Â Giulia's Swarm Logic (2.1 & 2.2)
-
-**Where to plug in**: [base_station/api/main.py](../base_station/api/main.py) line ~95
-
-```python
-from core.swarm_logic import SwarmLogic
-
-# In the voice_command endpoint:
-gossip_result = await swarm_logic.calculate_gossip_path(parsed_intent)
-```
-
-### Checkpoint 3: Backend Ã¢â€ â€™ MQTT Publisher (Hardware)
-
-**Where to plug in**: [base_station/api/main.py](../base_station/api/main.py) line ~102
-
-```python
-from core.mqtt_client import MQTTPublisher
-
-# In startup event:
-mqtt_publisher = MQTTPublisher(host, port, client_id)
-
-# In voice_command endpoint:
-await mqtt_publisher.publish("swarm/command", json.dumps(gossip_result))
-```
-
-### Checkpoint 4: Backend Ã¢â€ â€™ React (WebSocket)
-
-**Already implemented** in [App.jsx](../command_center/src/App.jsx#L14-L40)
-
-The React app connects to `ws://localhost:8000/ws/swarm` and listens for real-time updates.
-
-### Checkpoint 5: React Push-to-Talk (4.2.3)
-
-**Current Status**: Mock implementation recording audio
-
-**TODO**: Uncomment lines in [PushToTalkButton.jsx](../command_center/src/components/PushToTalkButton.jsx#L32-L37) once backend has `/api/transcribe` endpoint (Whisper integration).
-
----
-
-## Running the Full Demo
-
-### Terminal 1: Jetson Orin Backend
-```bash
-cd /path/to/jarvis/base_station
-source venv/bin/activate
-python -m uvicorn api.main:app --host 0.0.0.0 --port 8000
-```
-
-### Terminal 2: React Dev Server
-```bash
-cd /path/to/jarvis/command_center
+npm install
 npm run dev
 ```
 
-### Terminal 3: MQTT Broker (Mosquitto)
-```bash
-# If Mosquitto is already running on your Jetson:
-mosquitto -c /etc/mosquitto/mosquitto.conf
+Open:
 
-# Or start the service:
-sudo systemctl start mosquitto
+- [http://localhost:8000/docs](http://localhost:8000/docs)
+- [http://localhost:5173](http://localhost:5173)
+
+## Recommended Integration View
+
+### 1. Direct Command Path
+
+This is the cleanest current path for the swarm demo:
+
+```json
+{
+  "origin": "soldier-1",
+  "target_location": "Grid Alpha",
+  "action_code": "SEARCH",
+  "consensus_algorithm": "gossip"
+}
 ```
 
----
+Submit that payload to `POST /api/voice-command`.
 
-## Expected WebSocket Message Format (React Ã¢â€ â€ Backend)
+Even though the route name says "voice", the backend will bypass language parsing when a structured payload is already present.
 
-### Backend Ã¢â€ â€™ React (Gossip Update)
+### 2. Optional Text Command Path
+
+Example:
+
+```json
+{
+  "transcribed_text": "JARVIS, move swarm to Grid Alpha",
+  "consensus_algorithm": "raft"
+}
+```
+
+The backend will:
+
+1. run `process_voice_command()`
+2. normalize the result into a swarm intent
+3. dispatch through the requested consensus algorithm
+
+### 3. Optional Audio Path
+
+The audio route is:
+
+```text
+POST /api/transcribe-command
+```
+
+Use this only when you specifically want to demo audio input. It should not be treated as the architectural center of the project.
+
+## What the Swarm Runtime Produces
+
+`swarm_logic.py` already returns:
+
+- nodes and edges
+- active nodes
+- propagation order
+- total propagation time
+- delivery summary
+- search state and engagements
+- benchmark data
+- supported algorithms
+
+The key comparison exposed today is:
+
+- `gossip`
+- `raft`
+
+The runtime also advertises future candidates such as PBFT and epidemic push-pull, but those are not implemented yet.
+
+## WebSocket Contract
+
+The frontend listens on:
+
+```text
+ws://localhost:8000/ws/swarm
+```
+
+Representative update:
+
 ```json
 {
   "event": "gossip_update",
-  "active_nodes": ["node_1", "node_2", "node_5"],
-  "target_x": 150,
-  "target_y": -50,
-  "status": "swarming",
-  "timestamp": "2026-04-18T12:00:00Z"
+  "algorithm": "gossip",
+  "status": "propagating",
+  "active_nodes": ["gateway", "recon-1", "attack-1"],
+  "total_propagation_ms": 184,
+  "benchmark": {
+    "latency": {
+      "gossip_avg_ms": 0,
+      "raft_avg_ms": 0
+    }
+  }
 }
 ```
 
-### React Ã¢â€ â€™ Backend (Voice Command)
-```json
-{
-  "transcribed_text": "JARVIS, re-route swarm to Grid Alpha"
-}
-```
+Note: the event name is still `gossip_update` for compatibility, even when the backend dispatches the TCP/Raft baseline.
 
----
+## What Is Still Missing
 
-## Testing Checklist
+- MQTT publisher wired into live dispatch
+- end-to-end ESP32 demo synchronization
+- first-class structured command controls in the React UI
+- broader mission scenarios and topology growth
 
-- [ ] FastAPI backend starts without errors
-- [ ] React frontend loads at http://localhost:5173
-- [ ] WebSocket connection shows "connected" status
-- [ ] Push-to-Talk button records audio
-- [ ] Mock transcript appears after releasing the button
-- [ ] Network tab shows POST to `/api/voice-command`
-- [ ] Command appears in "Recent Commands" list
+## Suggested Next Moves for Section 4
 
----
-
-## What's Next?
-
-1. **Richard**: Implement [base_station/core/ai_bridge.py](../base_station/core/ai_bridge.py) with Ollama + ElevenLabs
-2. **Giulia**: Implement [base_station/core/swarm_logic.py](../base_station/core/swarm_logic.py) with NetworkX Gossip protocol
-3. **Sebastian**: Implement [base_station/core/mqtt_client.py](../base_station/core/mqtt_client.py) MQTT publisher
-4. **William**: Integrate all three modules into main.py, refine React UI (4.3.1-4.3.2)
-
-Good luck! Ã°Å¸Å¡â‚¬
+1. Keep the backend route behavior as-is, but present it as command-first in docs and demos.
+2. Add a structured command panel to the UI so gossip vs. raft can be compared directly.
+3. Only rely on push-to-talk when the demo specifically benefits from it.
+4. Wire MQTT after the control and visualization path is stable.

@@ -1,90 +1,104 @@
 JARVIS Master Blueprint
 
-Project Name: JARVIS (Joint Adaptive Resilient Voice Integrated Swarm)
+Project Name: JARVIS (Joint Adaptive Relay for Variable Interoperable Swarms)
 Hackathon: Critical Ops Hackathon (April 2026)
 
 1. Target Problem Statements
 
 Primary: Problem 10 (Swarm Coordination Protocol for Contested Environments)
 
-"Build a multi-agent simulation in which a team of drones must collaboratively search a defined area and report objects of interest back to a base station — while maintaining coordination even when individual agents lose communication intermittently. Implement and compare at least two swarm consensus algorithms. All results should be visualized and benchmarked."
+"Build a multi-agent simulation in which a team of drones must collaboratively search a defined area and report objects of interest back to a base station while maintaining coordination even when individual agents lose communication intermittently. Implement and compare at least two swarm consensus algorithms. All results should be visualized and benchmarked."
 
 Secondary: Problem 16 (Edge Inference)
 
-"Optimize and deploy Meta’s open-source AI models... for real-time edge inference on resource-constrained hardware, delivering state-of-the-art AI capabilities where cloud connectivity cannot be assumed... in disconnected, denied, or intermittent (DDIL) environments."
+"Optimize and deploy open-source AI models for real-time edge inference on resource-constrained hardware in disconnected, denied, or intermittent (DDIL) environments."
 
-2. Project Overview & Mission
+2. Project Overview and Mission
 
-JARVIS is a voice-activated, hardware-in-the-loop swarm coordination system designed for DDIL environments.
+JARVIS is a contested-environment swarm coordination system designed for DDIL operations.
 
-Instead of a human operator micromanaging drone flight paths via a tablet, the operator acts as a node in a decentralized "Gossip Protocol" network. The human speaks naturally; a local edge-deployed LLM translates the speech into strict JSON commands; and the swarm executes the coordination logic using a resilient, leaderless graph network.
+The current repo is centered on resilient coordination, not voice as the primary story. Human operators act as nodes in the command network, and commands can enter the system either as direct structured payloads or through an optional language/audio adapter. Once an intent is normalized, the swarm executes coordination logic using a leaderless adaptive gossip protocol or a leader-based TCP/Raft-style baseline for comparison.
 
-The Hackathon "Wow" Factor: The core logic runs entirely offline on an Nvidia Jetson Orin (Base Station), and commands are visualized both on a React graph and physically on ESP32 microcontrollers. This directly answers both Problem 10's simulation requirements and Problem 16's edge hardware requirements.
+The hackathon "wow" factor is that the core logic runs locally on an Nvidia Jetson Orin, broadcasts to a React command center in real time, and can be mirrored to ESP32 hardware for a physical propagation demo. That directly serves Problem 10's simulation, visualization, and benchmark requirements while still leaving room for Problem 16's edge inference story.
 
-3. System Architecture & Tech Stack
+3. System Architecture and Tech Stack
 
 A. Hardware Layer
 
-Nvidia Jetson Orin: The central edge compute node. Hosts the LLM, the FastAPI backend, and the MQTT Broker.
+Nvidia Jetson Orin: The edge compute node that hosts FastAPI, the consensus runtime, and optional local LLM tooling.
 
-ESP32 Microcontrollers: Physical representations of the swarm drones. They listen to MQTT and light up LEDs to demonstrate the Gossip protocol propagating through the network.
+ESP32 Microcontrollers: Physical representatives of field nodes and relays for the hardware demo path.
 
-B. The AI / Voice Pipeline
+B. Command and Intent Layer
 
-Input (STT): OpenAI Whisper (or local whisper.cpp).
+Primary input: direct structured swarm commands submitted by the UI or tests.
 
-Logic (LLM): Ollama running a quantized Llama-3-8B-Instruct (Hosted on the Jetson Orin).
+Optional input: text or audio commands routed through `ai_bridge.py`.
 
-Output (TTS): ElevenLabs Python API (Generates JARVIS confirmation voice).
+LLM path: Ollama running a local model to normalize operator language into safe command JSON.
 
-C. The Backend & Comm Layer
+Audio path: ElevenLabs helpers for speech-to-text and text-to-speech when those interfaces are useful.
 
-API: Python FastAPI (Serves the UI, handles routing).
+C. Backend and Communications
 
-Graph Logic: Python NetworkX (Calculates Gossip protocol propagation, routing, and swarm state).
+API: Python FastAPI for orchestration and integration.
 
-Swarm Messaging: Mosquitto MQTT Broker (paho-mqtt in Python).
+Graph Logic: Python + NetworkX for topology, propagation, disruption handling, and consensus simulation.
 
-D. The Frontend (Command Center)
+Messaging: Mosquitto MQTT for hardware publishing when the ESP32 path is connected.
+
+Sync: WebSockets from FastAPI to React for real-time state updates.
+
+D. Frontend Command Center
 
 Framework: React + Vite + Tailwind CSS.
 
-Visualization: react-force-graph (2D or 3D WebGL) for real-time node simulation.
+Visualization: D3-based swarm graph and live state panels.
 
-Sync: WebSockets (Socket.io or FastAPI WebSockets) linking the React UI to the Python backend.
+Role: Show topology, propagation order, node activity, and benchmark-driven state in a single operator-facing view.
 
-4. The Live Demo Flow (Step-by-Step)
+4. Live Demo Flow
 
-Command: User presses a hotkey on the React UI and speaks: "JARVIS, re-route swarm to Grid Alpha."
+1. Operator issues a swarm command.
+   - Preferred current framing: structured command from the UI or a test payload.
+   - Optional framing: voice/text command converted by `ai_bridge.py`.
+2. Backend normalizes the command into a safe swarm intent.
+3. `swarm_logic.py` executes either adaptive gossip or the TCP/Raft-style baseline.
+4. FastAPI broadcasts the resulting topology and state transitions to the React UI.
+5. When hardware is enabled, the same command path can be mirrored to MQTT and ESP-NOW for a physical relay demo.
+6. Benchmark outputs explain latency, bandwidth, and fault-tolerance tradeoffs between the two coordination approaches.
 
-Translation: Audio is transcribed. Local Llama 3 parses the text and outputs strict JSON.
+5. API and Data Contracts
 
-Confirmation: ElevenLabs generates audio: "Re-routing swarm to Grid Alpha."
+Normalized command shape:
 
-Graph Execution: Giulia's NetworkX logic calculates the gossip propagation path.
-
-Hardware Sync: FastAPI pushes staggered messages to the MQTT broker. The physical ESP32s light up sequentially.
-
-Visual Sync: FastAPI pushes WebSocket updates to React. The nodes on the force-graph turn red and physically cluster around coordinates representing "Grid Alpha."
-
-5. API & Data Contracts (Crucial for Dev)
-
-Llama 3 Output Expected JSON:
-
+```json
 {
-  "intent": "swarm_redeploy",
+  "intent": "swarm_command",
   "target_location": "Grid Alpha",
-  "action_code": "RED_ALERT",
-  "confidence": 0.95
+  "action_code": "SEARCH",
+  "consensus_algorithm": "gossip",
+  "origin": "soldier-1"
 }
+```
 
+Representative WebSocket payload:
 
-WebSocket Payload (Backend -> React UI):
-
+```json
 {
   "event": "gossip_update",
-  "active_nodes": ["node_1", "node_2", "node_5"],
+  "algorithm": "gossip",
+  "active_nodes": ["gateway", "recon-1", "attack-1"],
   "target_x": 150,
   "target_y": -50,
-  "status": "swarming"
+  "status": "propagating",
+  "benchmark": {
+    "latency": {
+      "gossip_avg_ms": 0,
+      "raft_avg_ms": 0
+    }
+  }
 }
+```
+
+Note: the event name `gossip_update` remains in the current implementation for frontend compatibility, even when the selected algorithm is the TCP/Raft baseline.
