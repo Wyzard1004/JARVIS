@@ -27,7 +27,7 @@ function App() {
       const data = JSON.parse(event.data)
       console.log('[App] Received:', data)
       
-      if (data.event === 'gossip_update') {
+      if (data.event === 'gossip_update' || data.event === 'swarm_state') {
         setSwarmState(data)
       }
     }

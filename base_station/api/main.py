@@ -10,9 +10,7 @@ This is the nervous system of JARVIS:
 """
 
 import os
-import asyncio
-import json
-from typing import Dict, List, Set
+from typing import Dict, Set
 from datetime import datetime
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
@@ -62,14 +60,63 @@ class ConnectionManager:
 
     async def broadcast(self, message: Dict):
         """Send a message to all connected clients"""
+        stale_connections = []
         for connection in self.active_connections:
             try:
                 await connection.send_json(message)
             except Exception as e:
                 print(f"Error broadcasting to client: {e}")
+                stale_connections.append(connection)
+
+        for connection in stale_connections:
+            self.disconnect(connection)
 
 
 manager = ConnectionManager()
+
+
+def mock_parse_intent(payload: Dict) -> Dict:
+    """Small placeholder parser until ai_bridge.py is wired in."""
+    transcribed_text = (payload.get("transcribed_text") or "").strip()
+    normalized = transcribed_text.lower()
+    origin = payload.get("origin") or payload.get("operator_node")
+    if not origin:
+        if any(token in normalized for token in {"operator two", "operator 2", "soldier two", "soldier 2"}):
+            origin = "soldier-2"
+        else:
+            origin = "soldier-1"
+
+    target_location = payload.get("target_location") or payload.get("target")
+    if not target_location:
+        if "bravo" in normalized:
+            target_location = "Grid Bravo"
+        elif "charlie" in normalized:
+            target_location = "Grid Charlie"
+        else:
+            target_location = "Grid Alpha"
+
+    action_code = payload.get("action_code") or payload.get("action")
+    if not action_code:
+        if any(token in normalized for token in {"engage", "strike", "fire", "tank", "armor"}):
+            action_code = "ENGAGE_TARGET"
+        elif any(token in normalized for token in {"sync", "rally", "regroup"}):
+            action_code = "SYNC"
+        elif any(token in normalized for token in {"scan", "search", "sweep"}):
+            action_code = "SEARCH"
+        else:
+            action_code = "RED_ALERT"
+
+    return {
+        "intent": payload.get("intent", "swarm_redeploy"),
+        "target_location": target_location,
+        "action_code": action_code,
+        "confidence": float(payload.get("confidence", 0.82)),
+        "consensus_algorithm": payload.get("consensus_algorithm") or payload.get("algorithm") or "gossip",
+        "origin": origin,
+        "operator_node": origin,
+        "network_conditions": payload.get("network_conditions", {}),
+        "transcribed_text": transcribed_text,
+    }
 
 
 # ============================================================
@@ -105,6 +152,12 @@ async def websocket_swarm_endpoint(websocket: WebSocket):
     - Command confirmations
     """
     await manager.connect(websocket)
+    swarm = get_swarm()
+    initial_state = swarm.get_state()
+    await websocket.send_json({
+        "event": "swarm_state",
+        **initial_state,
+    })
     try:
         while True:
             data = await websocket.receive_text()
@@ -138,22 +191,17 @@ async def voice_command(payload: Dict):
     5. Broadcast to React UI via WebSocket
     """
     transcribed_text = payload.get("transcribed_text", "")
-    
-    if not transcribed_text:
-        return {"error": "No transcription provided"}
-    
-    # TODO: Integrate ai_bridge.process_voice_command(transcribed_text)
-    # For now, use a mock intent that works with swarm_logic
-    parsed_intent = {
-        "intent": "swarm",
-        "target": "Grid Alpha",
-        "action": "RED_ALERT",
-        "transcribed_text": transcribed_text
-    }
-    
-    # Integrate swarm_logic.calculate_gossip_path(parsed_intent)
+    direct_intent = payload.get("target_location") or payload.get("target")
+    if not transcribed_text and not direct_intent:
+        return {"error": "No transcription or intent payload provided"}
+
+    parsed_intent = mock_parse_intent(payload)
     swarm = get_swarm()
-    gossip_result = swarm.calculate_gossip_path(parsed_intent)
+    algorithm = parsed_intent.get("consensus_algorithm", "gossip").lower()
+    if algorithm in {"raft", "tcp", "tcp-raft", "raft-consensus", "leader"}:
+        consensus_result = swarm.calculate_raft_path(parsed_intent)
+    else:
+        consensus_result = swarm.calculate_gossip_path(parsed_intent)
     
     # TODO: Publish to MQTT via mqtt_client
     # await mqtt_publisher.publish("swarm/command", json.dumps(gossip_result))
@@ -161,15 +209,31 @@ async def voice_command(payload: Dict):
     # Broadcast update to all connected React clients
     await manager.broadcast({
         "event": "gossip_update",
-        "status": "propagating",
-        "data": gossip_result,
+        "status": consensus_result.get("status", "propagating"),
+        "algorithm": consensus_result.get("algorithm"),
+        "target_location": consensus_result.get("target_location"),
+        "target_x": consensus_result.get("target_x", 0),
+        "target_y": consensus_result.get("target_y", 0),
+        "control_node": consensus_result.get("search_state", {}).get("control_node"),
+        "nodes": consensus_result.get("nodes", []),
+        "edges": consensus_result.get("edges", []),
+        "active_nodes": consensus_result.get("active_nodes", []),
+        "propagation_order": consensus_result.get("propagation_order", []),
+        "total_propagation_ms": consensus_result.get("total_propagation_ms", 0),
+        "search_state": consensus_result.get("search_state", {}),
+        "target_tasks": consensus_result.get("search_state", {}).get("target_tasks", []),
+        "engagements": consensus_result.get("search_state", {}).get("engagements", []),
+        "object_reports": consensus_result.get("object_reports", []),
+        "delivery_summary": consensus_result.get("delivery_summary", {}),
+        "benchmark": consensus_result.get("benchmark", {}),
+        "data": consensus_result,
         "transcribed_text": transcribed_text
     })
     
     return {
-        "status": "propagating",
-        "message": "Command executing via gossip protocol",
-        "gossip_data": gossip_result
+        "status": consensus_result.get("status", "propagating"),
+        "message": "Command executing via swarm consensus protocol",
+        "consensus_data": consensus_result
     }
 
 
@@ -191,9 +255,23 @@ async def get_swarm_state():
     return {
         "nodes": state.get("nodes", []),
         "edges": state.get("edges", []),
+        "active_nodes": state.get("active_nodes", []),
         "propagation_order": state.get("propagation_order", []),
         "status": state.get("status", "idle"),
-        "timestamp": datetime.now().isoformat()
+        "algorithm": state.get("algorithm", "adaptive-gossip"),
+        "target_location": state.get("target_location", "Grid Alpha"),
+        "target_x": state.get("target_x", 0),
+        "target_y": state.get("target_y", 0),
+        "control_node": state.get("search_state", {}).get("control_node"),
+        "protocol": state.get("protocol", {}),
+        "delivery_summary": state.get("delivery_summary", {}),
+        "search_state": state.get("search_state", {}),
+        "target_tasks": state.get("search_state", {}).get("target_tasks", []),
+        "engagements": state.get("search_state", {}).get("engagements", []),
+        "object_reports": state.get("object_reports", []),
+        "benchmark": state.get("benchmark", {}),
+        "available_algorithms": state.get("available_algorithms", []),
+        "timestamp": state.get("timestamp", datetime.now().isoformat())
     }
 
 
