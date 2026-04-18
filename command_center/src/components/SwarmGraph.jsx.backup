@@ -1,0 +1,731 @@
+import React, { useEffect, useRef, useState } from 'react'
+import * as d3 from 'd3'
+
+/**
+ * SwarmGraph Component (4.3.0 Enhanced)
+ * 
+ * Displays swarm coordination with:
+ * - Stable soldiers/gateway (fixed anchor strength prevents jittering)
+ * - Attack drone delays with operator signaling (recon → operators → attack)
+ * - Edge lighting/glow during signal transmission
+ * - Expanded 9-sector map (Alpha 1-3, Bravo 1-3, Charlie 1-3)
+ * - Larger canvas for better visibility
+ */
+
+function SwarmGraph({ state }) {
+  const svgRef = useRef()
+  const simulationRef = useRef()
+  const svgContainerRef = useRef(null)
+  const [propagationTimings, setPropagationTimings] = useState({})
+  const [currentTime, setCurrentTime] = useState(0)
+  const [animationPhase, setAnimationPhase] = useState(0)
+  const [attackPhase, setAttackPhase] = useState('recon_detecting')
+  
+  const propagationOrder = state?.data?.propagation_order || state?.propagation_order || []
+  const targetX = state?.target_x ?? state?.data?.target_x ?? 0
+  const targetY = state?.target_y ?? state?.data?.target_y ?? 0
+  const activeNodes = new Set(state?.active_nodes || state?.data?.active_nodes || [])
+  const enemies = state?.enemies || state?.data?.enemies || []
+  const attackQueue = state?.attack_queue || state?.data?.attack_queue || []
+  const signalAnimations = state?.signal_animations || state?.data?.signal_animations || []
+  const reconStatus = state?.recon_status || state?.data?.recon_status || {}
+
+  // Handle propagation animation timing
+  useEffect(() => {
+    if (propagationOrder.length > 0) {
+      const timings = {}
+      propagationOrder.forEach(event => {
+        timings[event.node] = event.timestamp_ms
+      })
+      setPropagationTimings(timings)
+      
+      const startTime = Date.now()
+      const interval = setInterval(() => {
+        const elapsed = Date.now() - startTime
+        setCurrentTime(elapsed)
+        setAnimationPhase((elapsed / 2000) % 1)
+        
+        if (elapsed < 300) {
+          setAttackPhase('recon_detecting')
+        } else if (elapsed < 600) {
+          setAttackPhase('operator_signaling')
+        } else {
+          setAttackPhase('attack_executing')
+        }
+      }, 30)
+      
+      return () => clearInterval(interval)
+    }
+    setPropagationTimings({})
+    setCurrentTime(0)
+  }, [propagationOrder])
+
+  // Initialize and update visualization (without clearing)
+  useEffect(() => {
+    if (!svgRef.current) return
+
+    const nodes = (state?.nodes || []).map(node => ({
+      id: node.id,
+      status: node.status,
+      drone_type: node.drone_type || 'unknown',
+      role: node.role,
+      x: node.x,
+      y: node.y,
+      homeX: node.x,
+      homeY: node.y
+    }))
+
+    const links = (state?.edges || []).map(edge => ({
+      source: edge.source,
+      target: edge.target
+    }))
+
+    const width = 1000
+    const height = 600
+    const missionX = (width / 2) + targetX
+    const missionY = (height / 2) + targetY
+
+    const svg = d3.select(svgRef.current)
+
+    // FIRST TIME SETUP: Only initialize if not already done
+    if (svgContainerRef.current === null) {
+      svgRef.current.setAttribute('width', width)
+      svgRef.current.setAttribute('height', height)
+      svgRef.current.setAttribute('viewBox', [0, 0, width, height])
+
+      // Add grid background (static, only once)
+      const gridSize = 100
+      const defs = svg.append('defs')
+      
+      // Add glow filter
+      defs.append('filter')
+        .attr('id', 'glow')
+        .append('feGaussianBlur')
+        .attr('stdDeviation', 3)
+        .attr('result', 'coloredBlur')
+
+      for (let x = 0; x <= width; x += gridSize) {
+        svg.append('line')
+          .attr('x1', x).attr('y1', 0)
+          .attr('x2', x).attr('y2', height)
+          .attr('stroke', '#2B3E50').attr('stroke-width', 0.5).attr('opacity', 0.3)
+      }
+      for (let y = 0; y <= height; y += gridSize) {
+        svg.append('line')
+          .attr('x1', 0).attr('y1', y)
+          .attr('x2', width).attr('y2', y)
+          .attr('stroke', '#2B3E50').attr('stroke-width', 0.5).attr('opacity', 0.3)
+      }
+
+      // Create force simulation ONCE and keep it running
+      const simulation = d3.forceSimulation(nodes)
+        .force('link', d3.forceLink(links).id(d => d.id).distance(100))
+        .force('charge', d3.forceManyBody().strength(-250))
+        .force('center', d3.forceCenter(width / 2, height / 2))
+        .force(
+          'mission-x',
+          d3.forceX(d => {
+            if (d.drone_type === 'gateway' || d.drone_type === 'compute') return d.homeX
+            if (d.drone_type === 'soldier') return d.homeX
+            return activeNodes.has(d.id) ? missionX : d.homeX
+          }).strength(d => {
+            if (d.drone_type === 'compute') return 0.5
+            if (d.drone_type === 'gateway') return 0.5
+            if (d.drone_type === 'soldier') return 0.8
+            return activeNodes.has(d.id) ? 0.35 : 0.1
+          })
+        )
+        .force(
+          'mission-y',
+          d3.forceY(d => {
+            if (d.drone_type === 'gateway' || d.drone_type === 'compute') return d.homeY
+            if (d.drone_type === 'soldier') return d.homeY
+            return activeNodes.has(d.id) ? missionY : d.homeY
+          }).strength(d => {
+            if (d.drone_type === 'compute') return 0.5
+            if (d.drone_type === 'gateway') return 0.5
+            if (d.drone_type === 'soldier') return 0.8
+            return activeNodes.has(d.id) ? 0.35 : 0.1
+          })
+        )
+
+      simulationRef.current = simulation
+
+      // Draw links group (edges only show when signals active)
+      svg.selectAll('.link-group').remove()  // Clean up if exists
+      const linkGroup = svg.selectAll('.link-group')
+        .data(links)
+        .enter()
+        .append('g')
+        .attr('class', 'link-group')
+
+      linkGroup.append('line')
+        .attr('class', 'link-base')
+        .attr('stroke', '#4B5563')
+        .attr('stroke-width', 2)
+        .attr('opacity', 0)  // Start invisible, show only when signal active
+
+      linkGroup.append('line')
+        .attr('class', 'link-glow')
+        .attr('stroke', '#FFD700')
+        .attr('stroke-width', 4)
+        .attr('opacity', 0)
+        .attr('filter', 'url(#glow)')
+
+      // Draw enemies
+      const enemyGroup = svg.selectAll('.enemy')
+        .data(enemies, d => `${d.x}-${d.y}`)
+        .enter()
+        .append('g')
+        .attr('class', 'enemy')
+
+      enemyGroup.append('circle')
+        .attr('r', 10)
+        .attr('fill', 'none')
+        .attr('stroke', '#EF4444')
+        .attr('stroke-width', 2)
+        .attr('stroke-dasharray', '5,5')
+
+      const xScale = 6
+      enemyGroup.append('line')
+        .attr('x1', -xScale).attr('y1', -xScale)
+        .attr('x2', xScale).attr('y2', xScale)
+        .attr('stroke', '#EF4444').attr('stroke-width', 2)
+
+      enemyGroup.append('line')
+        .attr('x1', -xScale).attr('y1', xScale)
+        .attr('x2', xScale).attr('y2', -xScale)
+        .attr('stroke', '#EF4444').attr('stroke-width', 2)
+
+      // Draw nodes (groups for each node)
+      const nodeGroup = svg.selectAll('.node-group')
+        .data(nodes, d => d.id)
+        .enter()
+        .append('g')
+        .attr('class', 'node-group')
+        .call(drag(simulation))
+
+      nodeGroup.append('circle')
+        .attr('class', 'node-circle')
+        .attr('r', d => (d.drone_type === 'gateway' || d.drone_type === 'compute' || d.drone_type === 'soldier') ? 10 : 8)
+        .attr('fill', '#6B7280')
+        .attr('stroke', '#4B5563')
+        .attr('stroke-width', 2)
+
+      nodeGroup.append('text')
+        .attr('x', 0).attr('y', 0)
+        .attr('font-size', '11px')
+        .attr('fill', '#D1D5DB')
+        .attr('text-anchor', 'middle')
+        .attr('dy', '.35em')
+        .attr('pointer-events', 'none')
+        .text(d => {
+          const label = d.id.split('-')[0]
+          return label === 'soldier' ? 'S' : label === 'attack' ? 'A' : label === 'recon' ? 'R' : label === 'compute' ? 'C' : 'G'
+        })
+
+      // Draw pulse rings
+      const pulseGroup = svg.selectAll('.pulse')
+        .data([])
+        .enter()
+        .append('circle')
+        .attr('class', 'pulse')
+        .attr('r', 8)
+        .attr('fill', 'none')
+        .attr('stroke', '#EF4444')
+        .attr('stroke-width', 2)
+
+      // Store references for updates
+      svgContainerRef.current = { 
+        simulation, 
+        linkGroup, 
+        nodeGroup, 
+        enemyGroup, 
+        pulseGroup, 
+        nodes, 
+        links,
+        width,
+        height
+      }
+
+      // Setup tick handler
+      simulation.on('tick', createTickHandler(svg, svgContainerRef.current, signalAnimations, currentTime, attackPhase, animationPhase, enemies, attackQueue))
+    } else {
+      // UPDATE EXISTING VISUALIZATION
+      const container = svgContainerRef.current
+      const { simulation, nodeGroup, pulseGroup } = container
+
+      // Update node data
+      nodeGroup.selectAll('.node-circle')
+        .data(nodes, d => d.id)
+        .attr('fill', d => {
+          if (propagationTimings[d.id] !== undefined) {
+            const nodeTime = propagationTimings[d.id]
+            const timeSinceEvent = currentTime - nodeTime
+            if (timeSinceEvent >= 0 && timeSinceEvent < 200) {
+              const isInPulse = (timeSinceEvent % 100) < 50
+              return isInPulse ? '#FCA5A5' : '#FFFFFF'
+            }
+          }
+
+          if (d.status === 'offline') return '#374151'
+          if (d.drone_type === 'compute') return '#06B6D4'
+          if (d.drone_type === 'gateway') return '#A855F7'
+          if (d.drone_type === 'soldier') return '#FB923C'
+          if (d.drone_type === 'attack') return '#EF4444'
+          if (d.drone_type === 'recon') return '#06B6D4'
+          return '#6B7280'
+        })
+        .attr('stroke', d => d.status === 'active' ? '#FFD700' : '#4B5563')
+
+      // Update pulse circles
+      const pulseData = nodes.filter(d => propagationTimings[d.id] !== undefined)
+      pulseGroup
+        .data(pulseData, d => d.id)
+        .attr('cx', d => d.x)
+        .attr('cy', d => d.y)
+        .attr('opacity', d => {
+          const nodeTime = propagationTimings[d.id]
+          const timeSinceEvent = currentTime - nodeTime
+          if (timeSinceEvent >= 0 && timeSinceEvent < 400) {
+            return 1 - (timeSinceEvent / 400)
+          }
+          return 0
+        })
+    }
+
+  }, [state, propagationTimings, currentTime, animationPhase, attackPhase, activeNodes])
+
+  function createTickHandler(svg, container, signals, time, phase, animation, enemies, queue) {
+    const { linkGroup, nodeGroup, enemyGroup, nodes, links, width, height } = container
+
+    return () => {
+      // Get active signals for this moment
+      const activeSignals = signals.filter(s => {
+        const elapsed = time - s.start_time_ms
+        return elapsed >= 0 && elapsed < (s.end_time_ms - s.start_time_ms)
+      })
+
+      // Create a set of edges with active signals
+      const edgesWithSignals = new Set()
+      activeSignals.forEach(s => {
+        const edge = links.find(l =>
+          (l.source.id === s.from_node && l.target.id === s.to_node) ||
+          (l.source.id === s.to_node && l.target.id === s.from_node)
+        )
+        if (edge) {
+          edgesWithSignals.add(links.indexOf(edge))
+        }
+      })
+
+      // Update links - ONLY show when signal is active
+      linkGroup.selectAll('.link-base')
+        .attr('x1', d => d.source.x)
+        .attr('y1', d => d.source.y)
+        .attr('x2', d => d.target.x)
+        .attr('y2', d => d.target.y)
+        .attr('opacity', (d, i) => edgesWithSignals.has(i) ? 0.6 : 0)
+
+      linkGroup.selectAll('.link-glow')
+        .attr('x1', d => d.source.x)
+        .attr('y1', d => d.source.y)
+        .attr('x2', d => d.target.x)
+        .attr('y2', d => d.target.y)
+        .attr('opacity', (d, i) => {
+          if (!edgesWithSignals.has(i)) return 0
+          const signal = activeSignals[0]
+          return signal.strength * 0.6
+        })
+        .attr('stroke', phase === 'recon_detecting' ? '#06B6D4' : phase === 'operator_signaling' ? '#FFD700' : '#EF4444')
+
+      // Update nodes
+      nodeGroup
+        .attr('transform', d => {
+          let x = d.x
+          let y = d.y
+
+          if (d.drone_type === 'attack' && enemies.length > 0) {
+            const delayFactor = phase === 'attack_executing' ? 1 : 0.2
+            const queueItem = queue.find(q => q.drone === d.id)
+            if (queueItem && queueItem.target_enemy) {
+              const enemy = queueItem.target_enemy
+              const angle = animation * 2 * Math.PI * delayFactor
+              const orbitRadius = 40
+              x = enemy.x + orbitRadius * Math.cos(angle)
+              y = enemy.y + orbitRadius * Math.sin(angle)
+            }
+          }
+
+          return `translate(${x},${y})`
+        })
+
+      // Update enemies
+      enemyGroup.attr('transform', d => `translate(${d.x},${d.y})`)
+    }
+
+    return () => {
+      if (simulationRef.current) {
+        simulationRef.current.stop()
+      }
+    }
+  }, [state, propagationTimings, currentTime, animationPhase, attackPhase, enemies, attackQueue])
+
+
+    // Add faint grid background for map reference
+    const gridSize = 100
+    for (let x = 0; x <= width; x += gridSize) {
+      svg.append('line')
+        .attr('x1', x).attr('y1', 0)
+        .attr('x2', x).attr('y2', height)
+        .attr('stroke', '#2B3E50').attr('stroke-width', 0.5).attr('opacity', 0.3)
+    }
+    for (let y = 0; y <= height; y += gridSize) {
+      svg.append('line')
+        .attr('x1', 0).attr('y1', y)
+        .attr('x2', width).attr('y2', y)
+        .attr('stroke', '#2B3E50').attr('stroke-width', 0.5).attr('opacity', 0.3)
+    }
+
+    // Create force simulation - INCREASED ANCHOR STRENGTH for soldiers/gateway/compute
+    const simulation = d3.forceSimulation(nodes)
+      .force('link', d3.forceLink(links).id(d => d.id).distance(100))
+      .force('charge', d3.forceManyBody().strength(-250))
+      .force('center', d3.forceCenter(width / 2, height / 2))
+      .force(
+        'mission-x',
+        d3.forceX(d => {
+          if (d.drone_type === 'gateway' || d.drone_type === 'compute') return d.homeX
+          if (d.drone_type === 'soldier') return d.homeX // Soldiers stay home
+          return activeNodes.has(d.id) ? missionX : d.homeX
+        }).strength(d => {
+          if (d.drone_type === 'compute') return 0.5   // Compute drones: strong anchor like gateway
+          if (d.drone_type === 'gateway') return 0.5   // INCREASED from 0.22 (much stronger anchor)
+          if (d.drone_type === 'soldier') return 0.8   // INCREASED from 0.5 (very strong anchor)
+          return activeNodes.has(d.id) ? 0.35 : 0.1
+        })
+      )
+      .force(
+        'mission-y',
+        d3.forceY(d => {
+          if (d.drone_type === 'gateway' || d.drone_type === 'compute') return d.homeY
+          if (d.drone_type === 'soldier') return d.homeY
+          return activeNodes.has(d.id) ? missionY : d.homeY
+        }).strength(d => {
+          if (d.drone_type === 'compute') return 0.5   // Compute drones: strong anchor like gateway
+          if (d.drone_type === 'gateway') return 0.5   // INCREASED from 0.22
+          if (d.drone_type === 'soldier') return 0.8   // INCREASED from 0.5
+          return activeNodes.has(d.id) ? 0.35 : 0.1
+        })
+      )
+
+    simulationRef.current = simulation
+
+    // Draw communication links with glow effect on signal transmission
+    const linkGroup = svg.selectAll('.link-group')
+      .data(links)
+      .enter()
+      .append('g')
+      .attr('class', 'link-group')
+
+    // Link base (darker)
+    linkGroup.append('line')
+      .attr('class', 'link-base')
+      .attr('stroke', '#4B5563')
+      .attr('stroke-width', 2)
+      .attr('opacity', 0.6)
+
+    // Link glow (animates during signal transmission)
+    linkGroup.append('line')
+      .attr('class', 'link-glow')
+      .attr('stroke', '#FFD700')
+      .attr('stroke-width', 4)
+      .attr('opacity', 0)
+      .attr('filter', 'url(#glow)')
+
+    // Add SVG filter for glow effect
+    svg.append('defs').append('filter')
+      .attr('id', 'glow')
+      .append('feGaussianBlur')
+      .attr('stdDeviation', 3)
+      .attr('result', 'coloredBlur')
+
+    // Draw signal animations (pulsing circles along edges)
+    const signalAnimationElements = svg.selectAll('.signal-animation')
+      .data(signalAnimations)
+      .enter()
+      .append('circle')
+      .attr('class', 'signal-animation')
+      .attr('r', 5)
+      .attr('fill', d => d.color)
+      .attr('opacity', 0)
+
+    // Draw enemy nodes (red X markers)
+    const enemyGroup = svg.selectAll('.enemy')
+      .data(enemies)
+      .enter()
+      .append('g')
+      .attr('class', 'enemy')
+
+    enemyGroup.append('circle')
+      .attr('r', 10)
+      .attr('fill', 'none')
+      .attr('stroke', '#EF4444')
+      .attr('stroke-width', 2)
+      .attr('stroke-dasharray', '5,5')
+
+    // X marker
+    const xScale = 6
+    enemyGroup.append('line')
+      .attr('x1', -xScale).attr('y1', -xScale)
+      .attr('x2', xScale).attr('y2', xScale)
+      .attr('stroke', '#EF4444').attr('stroke-width', 2)
+
+    enemyGroup.append('line')
+      .attr('x1', -xScale).attr('y1', xScale)
+      .attr('x2', xScale).attr('y2', -xScale)
+      .attr('stroke', '#EF4444').attr('stroke-width', 2)
+
+    // Draw swarm nodes with type-specific colors
+    const nodeGroup = svg.selectAll('.node-group')
+      .data(nodes, d => d.id)
+      .enter()
+      .append('g')
+      .attr('class', 'node-group')
+      .call(drag(simulation))
+
+    nodeGroup.append('circle')
+      .attr('r', d => (d.drone_type === 'gateway' || d.drone_type === 'compute' || d.drone_type === 'soldier') ? 10 : 8)
+      .attr('fill', d => {
+        // Pulse effect during propagation
+        if (propagationTimings[d.id] !== undefined) {
+          const nodeTime = propagationTimings[d.id]
+          const timeSinceEvent = currentTime - nodeTime
+          if (timeSinceEvent >= 0 && timeSinceEvent < 200) {
+            const isInPulse = (timeSinceEvent % 100) < 50
+            return isInPulse ? '#FCA5A5' : '#FFFFFF'
+          }
+        }
+
+        if (d.status === 'offline') return '#374151'
+        if (d.drone_type === 'compute') return '#06B6D4'  // Cyan for compute drones
+        if (d.drone_type === 'gateway') return '#A855F7'  // Purple for gateway (legacy)
+        if (d.drone_type === 'soldier') return '#FB923C'  // Orange for soldiers
+        if (d.drone_type === 'attack') return '#EF4444'   // Red for attack drones
+        if (d.drone_type === 'recon') return '#06B6D4'    // Cyan for recon drones
+        return '#6B7280'
+      })
+      .attr('stroke', d => d.status === 'active' ? '#FFD700' : '#4B5563')
+      .attr('stroke-width', 2)
+
+    // Draw node labels
+    nodeGroup.append('text')
+      .attr('x', 0).attr('y', 0)
+      .attr('font-size', '11px')
+      .attr('fill', '#D1D5DB')
+      .attr('text-anchor', 'middle')
+      .attr('dy', '.35em')
+      .attr('pointer-events', 'none')
+      .text(d => {
+        const label = d.id.split('-')[0]
+        return label === 'soldier' ? 'S' : label === 'attack' ? 'A' : label === 'recon' ? 'R' : label === 'compute' ? 'C' : 'G'
+      })
+
+    // Draw pulse rings
+    const pulseCircles = svg.selectAll('.pulse')
+      .data(nodes.filter(d => propagationTimings[d.id] !== undefined))
+      .enter()
+      .append('circle')
+      .attr('class', 'pulse')
+      .attr('r', 8)
+      .attr('fill', 'none')
+      .attr('stroke', '#EF4444')
+      .attr('stroke-width', 2)
+      .attr('opacity', d => {
+        const nodeTime = propagationTimings[d.id]
+        const timeSinceEvent = currentTime - nodeTime
+        if (timeSinceEvent >= 0 && timeSinceEvent < 400) {
+          return 1 - (timeSinceEvent / 400)
+        }
+        return 0
+      })
+
+    // Animation update: positions, signal flows, edge lighting
+    simulation.on('tick', () => {
+      // Update links
+      linkGroup.selectAll('.link-base')
+        .attr('x1', d => d.source.x)
+        .attr('y1', d => d.source.y)
+        .attr('x2', d => d.target.x)
+        .attr('y2', d => d.target.y)
+
+      // Light up edges during signal transmission
+      linkGroup.selectAll('.link-glow')
+        .attr('x1', d => d.source.x)
+        .attr('y1', d => d.source.y)
+        .attr('x2', d => d.target.x)
+        .attr('y2', d => d.target.y)
+        .attr('opacity', d => {
+          // Check if any signal is traveling on this edge right now
+          const matchingSignals = signalAnimations.filter(s => {
+            const edge = links.find(l =>
+              (l.source.id === s.from_node && l.target.id === s.to_node) ||
+              (l.source.id === s.to_node && l.target.id === s.from_node)
+            )
+            return edge === d
+          })
+          
+          if (matchingSignals.length === 0) return 0
+          
+          // Calculate if signal is in flight
+          const signal = matchingSignals[0]
+          const elapsed = currentTime - signal.start_time_ms
+          if (elapsed >= 0 && elapsed < (signal.end_time_ms - signal.start_time_ms)) {
+            return signal.strength * 0.6
+          }
+          return 0
+        })
+        .attr('stroke', d => {
+          // Color based on attack phase
+          if (attackPhase === 'recon_detecting') return '#06B6D4'   // Cyan for recon
+          if (attackPhase === 'operator_signaling') return '#FFD700' // Gold for operator signals
+          return '#EF4444'  // Red for attack
+        })
+
+      // Update signal animations
+      signalAnimationElements
+        .attr('cx', d => {
+          const edge = links.find(l =>
+            (l.source.id === d.from_node && l.target.id === d.to_node) ||
+            (l.source.id === d.to_node && l.target.id === d.from_node)
+          )
+          if (!edge) return width / 2
+          const source = edge.source.id === d.from_node ? edge.source : edge.target
+          const target = edge.target.id === d.to_node ? edge.target : edge.source
+          const elapsed = currentTime - d.start_time_ms
+          const progress = Math.max(0, Math.min(1, elapsed / (d.end_time_ms - d.start_time_ms)))
+          return source.x + (target.x - source.x) * progress
+        })
+        .attr('cy', d => {
+          const edge = links.find(l =>
+            (l.source.id === d.from_node && l.target.id === d.to_node) ||
+            (l.source.id === d.to_node && l.target.id === d.from_node)
+          )
+          if (!edge) return height / 2
+          const source = edge.source.id === d.from_node ? edge.source : edge.target
+          const target = edge.target.id === d.to_node ? edge.target : edge.source
+          const elapsed = currentTime - d.start_time_ms
+          const progress = Math.max(0, Math.min(1, elapsed / (d.end_time_ms - d.start_time_ms)))
+          return source.y + (target.y - source.y) * progress
+        })
+        .attr('opacity', d => {
+          const elapsed = currentTime - d.start_time_ms
+          if (elapsed < 0 || elapsed > (d.end_time_ms - d.start_time_ms)) return 0
+          return d.strength * 0.9
+        })
+
+      // Update node positions: STABLE soldiers/gateway + moving drones
+      nodeGroup
+        .attr('transform', d => {
+          let x = d.x
+          let y = d.y
+
+          // Attack drone orbital paths (with delayed start based on phase)
+          if (d.drone_type === 'attack' && enemies.length > 0) {
+            const delayFactor = attackPhase === 'attack_executing' ? 1 : 0.2
+            const queueItem = attackQueue.find(q => q.drone === d.id)
+            if (queueItem && queueItem.target_enemy) {
+              const enemy = queueItem.target_enemy
+              const angle = animationPhase * 2 * Math.PI * delayFactor
+              const orbitRadius = 40
+              x = enemy.x + orbitRadius * Math.cos(angle)
+              y = enemy.y + orbitRadius * Math.sin(angle)
+            }
+          }
+
+          return `translate(${x},${y})`
+        })
+
+      // Update enemy positions
+      enemyGroup
+        .attr('transform', d => `translate(${d.x},${d.y})`)
+
+      // Update pulse circles
+      pulseCircles
+        .attr('cx', d => d.x)
+        .attr('cy', d => d.y)
+    })
+
+    return () => simulation.stop()
+  }, [state, propagationTimings, animationPhase, attackPhase])
+
+  function drag(simulation) {
+    function dragstarted(event, d) {
+      if (!event.active) simulation.alphaTarget(0.3).restart()
+      d.fx = d.x
+      d.fy = d.y
+    }
+    function dragged(event, d) {
+      d.fx = event.x
+      d.fy = event.y
+    }
+    function dragended(event, d) {
+      if (!event.active) simulation.alphaTarget(0)
+      d.fx = null
+      d.fy = null
+    }
+    return d3.drag()
+      .on('start', dragstarted)
+      .on('drag', dragged)
+      .on('end', dragended)
+  }
+
+  return (
+    <div className="w-full">
+      <svg ref={svgRef} style={{ width: '100%', height: '600px', borderRadius: '8px' }} className="bg-gray-900" />
+      
+      {/* Legend and Status */}
+      <div className="grid grid-cols-2 gap-2 p-2 bg-gray-800 text-xs rounded-b">
+        <div className="flex gap-2">
+          <div className="flex items-center gap-1">
+            <div className="w-3 h-3 rounded-full bg-purple-500"></div>
+            <span>Gateway</span>
+          </div>
+          <div className="flex items-center gap-1">
+            <div className="w-3 h-3 rounded-full bg-orange-400"></div>
+            <span>Soldiers</span>
+          </div>
+          <div className="flex items-center gap-1">
+            <div className="w-3 h-3 rounded-full bg-red-500"></div>
+            <span>Attack</span>
+          </div>
+          <div className="flex items-center gap-1">
+            <div className="w-3 h-3 rounded-full bg-cyan-400"></div>
+            <span>Recon</span>
+          </div>
+        </div>
+        
+        <div className="text-right">
+          <p className="font-bold">
+            {attackPhase === 'recon_detecting' && '🔍 Recon Scanning...'}
+            {attackPhase === 'operator_signaling' && '📡 Operators Signaling...'}
+            {attackPhase === 'attack_executing' && '⚔️ Attack Executing'}
+          </p>
+        </div>
+      </div>
+
+      {/* Enemies and Attack Queue */}
+      {enemies.length > 0 && (
+        <div className="p-2 bg-gray-800 text-xs border-t border-gray-700 rounded-b">
+          <p className="text-red-400 font-bold">🎯 {enemies.length} enemies detected (Alpha 1: {targetX}, {targetY})</p>
+          {attackQueue.length > 0 && (
+            <p className="text-yellow-400 mt-1">
+              ⚔️ {attackPhase === 'attack_executing' ? 'Attack sequence:' : 'Ready sequence:'} {attackQueue.map(a => a.drone).join(' → ')}
+            </p>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+export default SwarmGraph

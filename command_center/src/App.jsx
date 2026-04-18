@@ -4,14 +4,23 @@ Component Hub for the Command Center UI
 */
 
 import React, { useEffect, useState } from 'react'
-import SwarmGraph from './components/SwarmGraph'
+import SwarmCanvas from './components/SwarmCanvas'
+import EventConsole from './components/EventConsole'
+import GridLegend from './components/GridLegend'
+import DroneStatusCard from './components/DroneStatusCard'
 import PushToTalkButton from './components/PushToTalkButton'
 import StatusPanel from './components/StatusPanel'
+import SoldierSelector from './components/SoldierSelector'
 
 function App() {
   const [swarmState, setSwarmState] = useState(null)
+  const [events, setEvents] = useState([])
+  const [currentCommand, setCurrentCommand] = useState(null)
   const [connectionStatus, setConnectionStatus] = useState('disconnected')
   const [commandHistory, setCommandHistory] = useState([])
+  const [activeSoldier, setActiveSoldier] = useState('soldier-1')
+  const [soldierStatus, setSoldierStatus] = useState(null)
+  const [selectedDrone, setSelectedDrone] = useState(null)
   const wsRef = React.useRef(null)
   const reconnectTimeoutRef = React.useRef(null)
   const reconnectAttemptsRef = React.useRef(0)
@@ -59,13 +68,70 @@ function App() {
       ws.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data)
-          console.log('[App] Received:', data)
+          console.log('[App] Received event:', data.event)
           
-          // Handle both gossip updates and initial swarm state
-          if (data.event === 'gossip_update' || data.event === 'swarm_state') {
-            console.log('[App] Updating swarm state')
+          // Handle Phase 4 continuous state updates
+          if (data.event === 'state_update') {
+            // Real-time state sync from swarm coordinator
+            console.log('[App] State update: drones=' + (data.nodes?.length || 0) + 
+                         ', edges=' + (data.edges?.length || 0))
             setSwarmState(data)
+            return
           }
+          
+          // Handle initial state on connection
+          if (data.event === 'initial_state') {
+            console.log('[App] Initial state received')
+            setSwarmState(data)
+            return
+          }
+          
+          // Handle gossip updates from voice commands
+          if (data.event === 'gossip_update' || data.event === 'swarm_state') {
+            console.log('[App] Updating swarm state from command response')
+            setSwarmState(data)
+            
+            // Update events if included in payload
+            if (data.events && Array.isArray(data.events)) {
+              setEvents(data.events)
+            }
+            
+            // Update current command display if gossip_update
+            if (data.event === 'gossip_update') {
+              setCurrentCommand({
+                timestamp: new Date().toLocaleTimeString(),
+                target: data.target_location || 'Unknown',
+                status: data.status || 'processing',
+                nodes: data.active_nodes?.length || data.nodes?.length || 0,
+                totalTime: `${(data.total_propagation_ms || 0).toFixed(0)}ms`,
+                message: data.confirmation_text || ''
+              })
+            }
+            return
+          }
+          
+          // Handle command responses
+          if (data.event === 'command_response') {
+            console.log('[App] Command response:', data.command_type)
+            if (data.response?.status === 'success') {
+              console.log('[App] Command executed:', data.response.message)
+            }
+            return
+          }
+          
+          // Handle connection confirmations
+          if (data.event === 'connected') {
+            console.log('[App] ' + data.message)
+            return
+          }
+          
+          // Handle errors
+          if (data.event === 'error') {
+            console.error('[App] Server error:', data.error)
+            return
+          }
+          
+          console.log('[App] Unknown event type:', data.event)
         } catch (error) {
           console.error('[App] Failed to parse WebSocket message:', error)
         }
@@ -187,51 +253,142 @@ function App() {
     }
   }
 
+  const handleSoldierChange = async (soldierId) => {
+    setActiveSoldier(soldierId)
+    try {
+      const response = await fetch(`/api/soldier/${soldierId}/status`)
+      if (response.ok) {
+        const data = await response.json()
+        setSoldierStatus({
+          status: 'online',
+          pending_commands: data.pending_commands || 0,
+          last_mission: data.last_mission_id || null
+        })
+      }
+    } catch (error) {
+      console.error('[App] Failed to fetch soldier status:', error)
+    }
+  }
+
   return (
     <div className="app min-h-screen bg-gray-900 text-white">
       <header className="bg-black border-b border-red-500 p-4">
-        <h1 className="text-3xl font-bold">⚡ JARVIS Command Center</h1>
-        <p className="text-gray-400">Consensus-Driven Swarm Coordination</p>
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-3xl font-bold">⚡ JARVIS Command Center</h1>
+            <p className="text-gray-400">Voice-Activated Swarm Coordinator</p>
+          </div>
+          <div className={`text-center px-4 py-2 rounded ${connectionStatus === 'connected' ? 'bg-green-900 text-green-400' : 'bg-red-900 text-red-400'}`}>
+            <p className="text-sm font-bold">
+              {connectionStatus === 'connected' ? '🟢 CONNECTED' : '🔴 DISCONNECTED'}
+            </p>
+          </div>
+        </div>
       </header>
 
-      <main className="flex gap-4 p-4">
-        {/* Left: Swarm Graph Visualization */}
-        <div className="flex-1">
-          <div className="bg-gray-800 rounded border border-gray-700 p-4">
-            <h2 className="text-xl font-bold mb-2">Swarm Topology</h2>
-            {swarmState ? (
-              <SwarmGraph state={swarmState} />
+      {/* Active Mission Status */}
+      {currentCommand && (
+        <div className="bg-gradient-to-r from-yellow-900 to-red-900 border-b-4 border-red-500 p-6">
+          <div className="flex items-start justify-between">
+            <div>
+              <p className="text-xs uppercase tracking-widest text-gray-300 mb-2">📡 ACTIVE MISSION</p>
+              <h2 className="text-4xl font-bold text-yellow-300 mb-4">
+                {currentCommand.target || 'UNKNOWN'}
+              </h2>
+              <div className="grid grid-cols-3 gap-8">
+                <div>
+                  <p className="text-xs text-gray-300 uppercase">Status</p>
+                  <p className="text-xl font-bold text-white capitalize">
+                    {currentCommand.status.replace(/_/g, ' ')}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs text-gray-300 uppercase">Active Nodes</p>
+                  <p className="text-3xl font-bold text-white">{currentCommand.nodes}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-gray-300 uppercase">Propagation Time</p>
+                  <p className="text-2xl font-bold text-white">{currentCommand.totalTime}</p>
+                </div>
+              </div>
+            </div>
+            <div className="text-right text-sm text-gray-300">
+              <p>{currentCommand.timestamp}</p>
+              {currentCommand.message && (
+                <p className="text-xs italic text-gray-400 mt-2">"{currentCommand.message}"</p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      <main className="grid grid-cols-12 gap-4 p-4 auto-rows-max">
+        {/* Left: Swarm Canvas Visualization (8 columns, square aspect) */}
+        <div className="col-span-8 flex justify-center">
+          <div className="bg-gray-800 rounded border border-gray-700 p-4" style={{ width: 'fit-content' }}>
+            <h2 className="text-xl font-bold mb-2">📡 Swarm Grid Visualization</h2>
+            {swarmState && (swarmState.drones || swarmState.nodes) ? (
+              <SwarmCanvas 
+                state={swarmState}
+                selectedDrone={selectedDrone}
+                onDroneClick={(droneId) => setSelectedDrone(droneId)}
+              />
             ) : (
-              <div className="w-full h-96 flex items-center justify-center bg-gray-900">
-                <p className="text-gray-500">Awaiting connection...</p>
+              <div className="w-full h-96 flex items-center justify-center bg-gray-900 rounded">
+                <p className="text-gray-500">Awaiting swarm state...</p>
               </div>
             )}
           </div>
+
+          {/* Event Console Below Grid */}
+          <div className="mt-4">
+            <EventConsole events={events} maxVisible={20} />
+          </div>
         </div>
 
-        {/* Right: Control Panel */}
-        <div className="w-80">
+        {/* Right Panel (4 columns) */}
+        <div className="col-span-4 space-y-4">
+          {/* Soldier Selector */}
+          <SoldierSelector 
+            activeSoldier={activeSoldier}
+            onSoldierChange={handleSoldierChange}
+            soldierStatus={soldierStatus}
+          />
+
           {/* Status Indicator */}
           <StatusPanel connectionStatus={connectionStatus} swarmState={swarmState} />
 
-          {/* Optional voice input */}
-          <div className="bg-gray-800 rounded border border-gray-700 p-4 mt-4">
-            <h3 className="text-lg font-bold mb-4">Optional Voice Input</h3>
+          {/* Selected Drone Status Card */}
+          {selectedDrone && swarmState && (
+            <DroneStatusCard 
+              drone={(swarmState.drones || []).find(d => d.id === selectedDrone) ||
+                     (swarmState.nodes?.find(n => n.id === selectedDrone))}
+              commsStatus="online"
+            />
+          )}
+
+          {/* Grid Legend */}
+          <GridLegend 
+            activeDrones={swarmState?.drones || swarmState?.nodes || []}
+          />
+
+          {/* Push-to-Talk Button */}
+          <div className="bg-gray-800 rounded border border-gray-700 p-4">
+            <h3 className="text-lg font-bold mb-4">🎤 Voice Command</h3>
             <PushToTalkButton onCommand={handleVoiceCommand} />
           </div>
 
           {/* Command History */}
-          <div className="bg-gray-800 rounded border border-gray-700 p-4 mt-4 h-96 overflow-y-auto">
-            <h3 className="text-lg font-bold mb-2">Recent Commands</h3>
+          <div className="bg-gray-800 rounded border border-gray-700 p-4 h-48 overflow-y-auto">
+            <h3 className="text-lg font-bold mb-2">📜 Recent Commands</h3>
             {commandHistory.length === 0 ? (
-              <p className="text-gray-500">No commands yet</p>
+              <p className="text-gray-500 text-sm">No commands yet</p>
             ) : (
               <div className="space-y-2">
-                {commandHistory.map((cmd, i) => (
-                  <div key={i} className="bg-gray-900 p-2 rounded text-sm border-l-2 border-yellow-500">
-                    <p className="font-mono">{cmd.command}</p>
+                {commandHistory.slice(-5).map((cmd, i) => (
+                  <div key={i} className="bg-gray-900 p-2 rounded text-xs border-l-2 border-yellow-500">
+                    <p className="font-mono text-gray-300">{cmd.command.substring(0, 40)}...</p>
                     <p className="text-xs text-blue-400">{cmd.goal}</p>
-                    <p className="text-xs text-gray-400">{cmd.status}</p>
                   </div>
                 ))}
               </div>
