@@ -55,6 +55,7 @@ class JetsonSerialPTTListener:
         self._audio = pyaudio.PyAudio()
         self._stream = None
         self._serial = None
+        self._listening = False
         self._selected_device_index, self._selected_device_name = self._resolve_input_device()
         self._device_sample_rate = self._resolve_device_sample_rate()
         self._chunk_seconds = self.chunk_samples / self.sample_rate
@@ -131,8 +132,21 @@ class JetsonSerialPTTListener:
 
     def _open_serial(self) -> None:
         port = self._resolve_serial_port()
-        self._serial = serial.Serial(port=port, baudrate=self.serial_baud, timeout=self.serial_timeout)
+        self._serial = serial.Serial()
+        self._serial.port = port
+        self._serial.baudrate = self.serial_baud
+        self._serial.timeout = self.serial_timeout
+        self._serial.dsrdtr = False
+        self._serial.rtscts = False
+        self._serial.dtr = False
+        self._serial.rts = False
+        self._serial.open()
         time.sleep(1.0)
+        try:
+            self._serial.setDTR(False)
+            self._serial.setRTS(False)
+        except serial.SerialException:
+            pass
         self._serial.reset_input_buffer()
         self._serial.reset_output_buffer()
 
@@ -215,6 +229,7 @@ class JetsonSerialPTTListener:
 
     def _record_until_release(self) -> bytes | None:
         self._open_stream()
+        self._listening = True
         recorded_chunks: list[bytes] = []
         started_at = time.monotonic()
         cancelled = False
@@ -234,6 +249,7 @@ class JetsonSerialPTTListener:
                     print(f"[PTT] Max duration reached ({self.max_command_seconds:.1f}s)")
                     break
         finally:
+            self._listening = False
             if self._stream is not None:
                 self._stream.stop_stream()
                 self._stream.close()
@@ -273,6 +289,11 @@ class JetsonSerialPTTListener:
             return None
 
         event = self._normalize_serial_event(event)
+
+        if event in self.STOP_EVENTS and not self._listening:
+            print(f"[PTT] Ignoring stop event while idle: {event}")
+            return None
+
         print(f"[PTT] ESP32 event: {event}")
         return event
 
