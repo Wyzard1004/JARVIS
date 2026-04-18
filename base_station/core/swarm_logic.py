@@ -68,6 +68,40 @@ class SwarmCoordinator:
     GOSSIP_METADATA_OVERHEAD_BYTES = 18
     TCP_SESSION_OVERHEAD_BYTES = 60
     RAFT_CONTROL_OVERHEAD_BYTES = 72
+    PRIORITY_PROFILES = {
+        "critical": {
+            "rank": 3,
+            "max_hops": 3,
+            "task_ttl_ms": 260.0,
+            "claim_timeout_ms": 120.0,
+            "lease_ms": 220.0,
+            "preempt_lower_priority": True,
+        },
+        "high": {
+            "rank": 2,
+            "max_hops": 2,
+            "task_ttl_ms": 240.0,
+            "claim_timeout_ms": 110.0,
+            "lease_ms": 205.0,
+            "preempt_lower_priority": True,
+        },
+        "medium": {
+            "rank": 1,
+            "max_hops": 2,
+            "task_ttl_ms": 225.0,
+            "claim_timeout_ms": 100.0,
+            "lease_ms": 190.0,
+            "preempt_lower_priority": False,
+        },
+        "low": {
+            "rank": 0,
+            "max_hops": 1,
+            "task_ttl_ms": 180.0,
+            "claim_timeout_ms": 90.0,
+            "lease_ms": 165.0,
+            "preempt_lower_priority": False,
+        },
+    }
 
     def __init__(self, seed: Optional[int] = None):
         self._rng = random.Random(seed if seed is not None else self.DEFAULT_SEED)
@@ -502,6 +536,7 @@ class SwarmCoordinator:
             "target_x": area["target_x"],
             "target_y": area["target_y"],
             "mission_type": "detect-assign-engage",
+            "coordination_mode": "hop-scoped-auction",
             "mission_status": "idle",
             "control_node": "soldier-1",
             "operator_nodes": ["soldier-1", "soldier-2"],
@@ -521,6 +556,9 @@ class SwarmCoordinator:
             "candidate_scores": [],
             "primary_assignee": None,
             "backup_assignees": [],
+            "task_envelopes": [],
+            "bid_submissions": [],
+            "active_leases": [],
             "target_tasks": [],
             "engagements": [],
             "search_lanes": [
@@ -603,6 +641,14 @@ class SwarmCoordinator:
             return "raft"
         return "gossip"
 
+    def _task_priority_profile(self, priority: Optional[str]) -> Dict:
+        normalized = (priority or "high").strip().lower()
+        profile = self.PRIORITY_PROFILES.get(normalized, self.PRIORITY_PROFILES["high"])
+        return {
+            "priority": normalized,
+            **deepcopy(profile),
+        }
+
     def _normalize_command(self, parsed_intent: Dict) -> Dict:
         target_location = (
             parsed_intent.get("target_location")
@@ -635,8 +681,106 @@ class SwarmCoordinator:
             "backup_control_nodes": [node_id for node_id in operator_nodes if node_id != origin],
             "gateway_node": "gateway",
             "transcribed_text": parsed_intent.get("transcribed_text", ""),
+            "task_priority": parsed_intent.get("task_priority"),
+            "task_max_hops": parsed_intent.get("task_max_hops"),
+            "task_claim_timeout_ms": parsed_intent.get("task_claim_timeout_ms"),
+            "task_lease_ms": parsed_intent.get("task_lease_ms"),
             "operational_area": deepcopy(area),
         }
+
+    def _path_link_metrics(self, path: List[str], protocol: Dict, at_ms: float) -> Dict:
+        if len(path) < 2:
+            return {
+                "path_hops": 0,
+                "avg_link_quality": 1.0,
+                "weakest_link_quality": 1.0,
+                "estimated_path_delay_ms": 0.0,
+            }
+
+        qualities: List[float] = []
+        estimated_delays: List[float] = []
+        for left, right in zip(path, path[1:]):
+            edge = self._edge_profile(left, right, protocol, at_ms)
+            qualities.append(edge["quality"])
+            estimated_delays.append((edge["min_delay_ms"] + edge["max_delay_ms"]) / 2)
+
+        return {
+            "path_hops": len(path) - 1,
+            "avg_link_quality": round(sum(qualities) / len(qualities), 3),
+            "weakest_link_quality": round(min(qualities), 3),
+            "estimated_path_delay_ms": round(sum(estimated_delays), 1),
+        }
+
+    def _build_task_envelope(
+        self,
+        command: Dict,
+        target_contact: Dict,
+        published_by: str,
+        published_at_ms: float,
+        protocol: Dict,
+    ) -> Dict:
+        priority_profile = self._task_priority_profile(
+            command.get("task_priority") or target_contact.get("priority")
+        )
+        max_hops = min(
+            protocol["ttl"],
+            max(
+                1,
+                int(command.get("task_max_hops") or priority_profile["max_hops"]),
+            ),
+        )
+        claim_timeout_ms = max(
+            50.0,
+            float(command.get("task_claim_timeout_ms") or priority_profile["claim_timeout_ms"]),
+        )
+        lease_ms = max(
+            90.0,
+            float(command.get("task_lease_ms") or priority_profile["lease_ms"]),
+        )
+        delivery_budget_ms = max_hops * 95.0
+        claim_timeout_at_ms = round(
+            published_at_ms + delivery_budget_ms + claim_timeout_ms,
+            1,
+        )
+        expires_at_ms = round(
+            published_at_ms
+            + max(
+                priority_profile["task_ttl_ms"],
+                (delivery_budget_ms * 2) + claim_timeout_ms + 40.0,
+            ),
+            1,
+        )
+        claim_timeout_at_ms = round(min(claim_timeout_at_ms, expires_at_ms), 1)
+
+        return {
+            "delegator_node": published_by,
+            "distribution_mode": "hop-scoped-auction",
+            "intent": command["intent"],
+            "action_code": command["action_code"],
+            "target_id": target_contact["id"],
+            "priority": priority_profile["priority"],
+            "priority_rank": priority_profile["rank"],
+            "max_hops": max_hops,
+            "published_at_ms": round(published_at_ms, 1),
+            "expires_at_ms": expires_at_ms,
+            "claim_timeout_ms": round(claim_timeout_ms, 1),
+            "claim_timeout_at_ms": claim_timeout_at_ms,
+            "lease_ms": round(lease_ms, 1),
+            "preempts_lower_priority": priority_profile["preempt_lower_priority"],
+            "constraints": {
+                "required_weapon": target_contact.get("required_weapon", "agm"),
+                "required_weapon_units": max(1, int(target_contact.get("required_weapon_units", 1))),
+                "min_fuel_percent": 35,
+                "min_link_quality": 0.55,
+                "allowed_roles": ["attack-drone"],
+            },
+        }
+
+    def _upsert_active_lease(self, active_leases: List[Dict], lease: Dict) -> None:
+        active_leases[:] = [
+            entry for entry in active_leases if entry.get("task_id") != lease.get("task_id")
+        ]
+        active_leases.append(deepcopy(lease))
 
     def _resolve_edge_reference(
         self,
@@ -1203,6 +1347,8 @@ class SwarmCoordinator:
         rng: random.Random,
         algorithm: str,
         phase: str,
+        max_hops: Optional[int] = None,
+        expires_at_ms: Optional[float] = None,
     ) -> Dict:
         allow_relay = algorithm == "gossip"
         attempts = 0
@@ -1211,6 +1357,9 @@ class SwarmCoordinator:
 
         while attempts <= protocol["retry_limit"]:
             attempts += 1
+            if expires_at_ms is not None and current_time_ms > expires_at_ms:
+                latest_failure = "expired"
+                break
             path = self._best_path(
                 source_node,
                 target_node,
@@ -1222,10 +1371,15 @@ class SwarmCoordinator:
                 latest_failure = "no_route"
                 current_time_ms = round(current_time_ms + self._retry_delay_ms(attempts, protocol, rng), 1)
                 continue
+            hop_count = len(path) - 1
+            if max_hops is not None and hop_count > max_hops:
+                latest_failure = "out_of_scope"
+                current_time_ms = round(current_time_ms + self._retry_delay_ms(attempts, protocol, rng), 1)
+                continue
 
             hop_time_ms = current_time_ms
             delivered = True
-            used_relay = len(path) > 2
+            used_relay = hop_count > 1
 
             for left, right in zip(path, path[1:]):
                 edge = self._edge_profile(left, right, protocol, hop_time_ms)
@@ -1236,6 +1390,11 @@ class SwarmCoordinator:
 
                 delay_ms = self._sample_delay_ms(edge, rng)
                 arrival_ms = round(hop_time_ms + delay_ms, 1)
+                if expires_at_ms is not None and arrival_ms > expires_at_ms:
+                    latest_failure = "expired"
+                    current_time_ms = expires_at_ms
+                    delivered = False
+                    break
                 interruption = self._find_interruption(left, right, hop_time_ms, arrival_ms, protocol)
                 if interruption:
                     latest_failure = interruption["status"]
@@ -1266,6 +1425,7 @@ class SwarmCoordinator:
                     "attempts": attempts,
                     "completed_at_ms": round(hop_time_ms, 1),
                     "path": path,
+                    "hop_count": hop_count,
                     "relay_used": used_relay,
                     "last_failure": None,
                 }
@@ -1279,6 +1439,7 @@ class SwarmCoordinator:
             "attempts": attempts,
             "completed_at_ms": None,
             "path": [source_node],
+            "hop_count": 0,
             "relay_used": False,
             "last_failure": latest_failure,
         }
@@ -1361,11 +1522,19 @@ class SwarmCoordinator:
         receipt_times: Dict[str, float],
         protocol: Dict,
         evaluation_ms: float,
+        task_delivery_map: Optional[Dict[str, Dict]] = None,
+        task_envelope: Optional[Dict] = None,
     ) -> List[Dict]:
         candidates: List[Dict] = []
         state = self._network_state_at(protocol, evaluation_ms)
         required_weapon = target_contact.get("required_weapon", "agm")
         required_units = max(1, int(target_contact.get("required_weapon_units", 1)))
+        delivery_map = task_delivery_map or {}
+        min_link_quality = (
+            float(task_envelope["constraints"].get("min_link_quality", 0.0))
+            if task_envelope
+            else 0.0
+        )
 
         for node in self._base_nodes:
             if node["role"] != "attack-drone":
@@ -1384,9 +1553,60 @@ class SwarmCoordinator:
             line_of_sight = round(max(0.2, min(1.0, float(profile.get("line_of_sight", 0.8)))), 3)
             weapon_units = int(node.get("weapon_load", {}).get(required_weapon, 0))
             weapon_score = round(min(1.0, weapon_units / required_units), 3) if required_units else 1.0
-            reachable = node_id in receipt_times and node_id not in state["offline_nodes"]
-            eligible = reachable and weapon_units >= required_units and fuel_score >= 0.35
-            score = round(
+            delivery = delivery_map.get(node_id, {})
+            delivery_status = delivery.get("delivery_status") or delivery.get("status") or "not_attempted"
+            delivered_at_ms = delivery.get("delivered_at_ms") or delivery.get("completed_at_ms")
+            path = delivery.get("path", [])
+            path_metrics = self._path_link_metrics(
+                path,
+                protocol,
+                delivered_at_ms or evaluation_ms,
+            ) if path else {
+                "path_hops": 0,
+                "avg_link_quality": 0.0,
+                "weakest_link_quality": 0.0,
+                "estimated_path_delay_ms": 0.0,
+            }
+            within_hop_budget = (
+                path_metrics["path_hops"] <= task_envelope["max_hops"]
+                if task_envelope and delivery_status == "delivered"
+                else True
+            )
+            link_score = (
+                path_metrics["avg_link_quality"]
+                if delivery_status == "delivered"
+                else 0.0
+            )
+            responsiveness_score = 0.0
+            if task_envelope and delivered_at_ms is not None:
+                bid_window_ms = max(1.0, float(task_envelope["claim_timeout_ms"]))
+                responsiveness_score = round(
+                    max(0.0, 1.0 - ((delivered_at_ms - evaluation_ms) / bid_window_ms)),
+                    3,
+                )
+            hop_efficiency = 1.0
+            if task_envelope and task_envelope["max_hops"] > 0 and delivery_status == "delivered":
+                hop_efficiency = round(
+                    max(
+                        0.2,
+                        1.0 - (path_metrics["path_hops"] - 1) / max(1, task_envelope["max_hops"]),
+                    ),
+                    3,
+                )
+            base_reachable = node_id in receipt_times
+            reachable = (
+                (base_reachable or delivery_status == "delivered")
+                and node_id not in state["offline_nodes"]
+            )
+            eligible = (
+                reachable
+                and weapon_units >= required_units
+                and fuel_score >= 0.35
+                and within_hop_budget
+                and (delivery_status == "delivered" if task_envelope else True)
+                and link_score >= min_link_quality
+            )
+            base_score = round(
                 (
                     (fuel_score * 0.24)
                     + (proximity_score * 0.28)
@@ -1396,6 +1616,17 @@ class SwarmCoordinator:
                 ) * 100,
                 1,
             )
+            bid_score = base_score
+            if task_envelope:
+                bid_score = round(
+                    (
+                        ((base_score / 100.0) * 0.72)
+                        + (link_score * 0.14)
+                        + (responsiveness_score * 0.08)
+                        + (hop_efficiency * 0.06)
+                    ) * 100,
+                    1,
+                )
 
             candidates.append(
                 {
@@ -1414,14 +1645,29 @@ class SwarmCoordinator:
                     "remaining_weapon_units": weapon_units,
                     "reachable": reachable,
                     "eligible": eligible,
-                    "score": score,
+                    "suitability_score": base_score,
+                    "score": bid_score,
+                    "bid_score": bid_score,
+                    "delivery_status": delivery_status,
+                    "delivered_at_ms": delivered_at_ms,
+                    "path": path,
+                    "path_hops": path_metrics["path_hops"],
+                    "avg_link_quality": path_metrics["avg_link_quality"],
+                    "weakest_link_quality": path_metrics["weakest_link_quality"],
+                    "estimated_path_delay_ms": path_metrics["estimated_path_delay_ms"],
+                    "link_score": round(link_score, 3),
+                    "responsiveness_score": responsiveness_score,
+                    "hop_efficiency": hop_efficiency,
+                    "within_hop_budget": within_hop_budget,
                 }
             )
 
         candidates.sort(
             key=lambda item: (
                 not item["eligible"],
-                -item["score"],
+                -item["bid_score"],
+                item["delivery_status"] != "delivered",
+                item["path_hops"],
                 item["distance_km"],
                 item["node"],
             )
@@ -1512,6 +1758,7 @@ class SwarmCoordinator:
             "target_location": area["label"],
             "target_x": area["target_x"],
             "target_y": area["target_y"],
+            "coordination_mode": "hop-scoped-auction",
             "mission_status": "searching",
             "mission_type": "detect-assign-engage",
             "control_node": command["control_node"],
@@ -1532,6 +1779,9 @@ class SwarmCoordinator:
             "candidate_scores": [],
             "primary_assignee": None,
             "backup_assignees": [],
+            "task_envelopes": [],
+            "bid_submissions": [],
+            "active_leases": [],
             "target_tasks": [],
             "engagements": [],
             "search_lanes": [],
@@ -1747,28 +1997,41 @@ class SwarmCoordinator:
                     search_state["sectors"].append(sector_state)
                     continue
 
-                candidate_scores = self._score_attack_candidates(
+                base_candidate_scores = self._score_attack_candidates(
                     area,
                     target_contact,
                     receipt_times,
                     protocol,
                     report["completed_at_ms"] or detected_at_ms,
                 )
-                search_state["candidate_scores"] = deepcopy(candidate_scores)
                 task_publish_ms = round((report["completed_at_ms"] or detected_at_ms) + rng.uniform(15.0, 32.0), 1)
                 search_state["task_publish_ms"] = task_publish_ms
+                task_envelope = self._build_task_envelope(
+                    command,
+                    target_contact,
+                    active_control_node,
+                    task_publish_ms,
+                    protocol,
+                )
+                search_state["task_envelopes"].append(deepcopy(task_envelope))
                 task_state = {
                     "task_id": f"task-{target_contact['id']}",
                     "target_id": target_contact["id"],
                     "classification": target_contact["classification"],
                     "published_by": active_control_node,
                     "published_at_ms": task_publish_ms,
+                    "assignment_mode": "hop-scoped-auction",
+                    "task_envelope": deepcopy(task_envelope),
                     "status": "publishing",
-                    "candidate_scores": deepcopy(candidate_scores),
+                    "candidate_scores": [],
                     "task_deliveries": [],
+                    "auction_bids": [],
+                    "claim_timeout_at_ms": task_envelope["claim_timeout_at_ms"],
                     "selection_completed_ms": None,
                     "primary_assignee": None,
                     "backup_assignees": [],
+                    "lease": None,
+                    "lease_history": [],
                     "reassignment_history": [],
                     "completed_at_ms": None,
                     "fallback_action": target_contact.get("fallback_action", "mark_for_external_fires"),
@@ -1781,9 +2044,17 @@ class SwarmCoordinator:
                         "timestamp_ms": task_publish_ms,
                     }
                 )
+                search_state["timeline"].append(
+                    {
+                        "event": "task_envelope_published",
+                        "object_id": target_contact["id"],
+                        "node": active_control_node,
+                        "timestamp_ms": task_publish_ms,
+                    }
+                )
 
-                delivered_candidates: List[Dict] = []
-                for index, candidate in enumerate(candidate_scores, start=1):
+                task_delivery_map: Dict[str, Dict] = {}
+                for index, candidate in enumerate(base_candidate_scores, start=1):
                     delivery = self._simulate_message_delivery(
                         delivery_id=f"{task_state['task_id']}-{candidate['node']}",
                         source_node=active_control_node,
@@ -1793,42 +2064,176 @@ class SwarmCoordinator:
                         rng=rng,
                         algorithm=algorithm,
                         phase="target-task",
+                        max_hops=task_envelope["max_hops"],
+                        expires_at_ms=task_envelope["expires_at_ms"],
                     )
+                    delivery_path_metrics = self._path_link_metrics(
+                        delivery["path"],
+                        protocol,
+                        delivery["completed_at_ms"] or task_publish_ms,
+                    ) if delivery["status"] == "delivered" and len(delivery["path"]) > 1 else {
+                        "path_hops": 0,
+                        "avg_link_quality": 0.0,
+                        "weakest_link_quality": 0.0,
+                        "estimated_path_delay_ms": 0.0,
+                    }
                     delivery_payload = {
                         **candidate,
                         "candidate_rank": index,
                         "delivery_status": delivery["status"],
                         "delivered_at_ms": delivery["completed_at_ms"],
                         "path": delivery["path"],
+                        "path_hops": delivery["hop_count"],
                         "attempts": delivery["attempts"],
                         "relay_used": delivery["relay_used"],
                         "last_failure": delivery["last_failure"],
+                        "avg_link_quality": delivery_path_metrics["avg_link_quality"],
+                        "weakest_link_quality": delivery_path_metrics["weakest_link_quality"],
+                        "estimated_path_delay_ms": delivery_path_metrics["estimated_path_delay_ms"],
+                        "within_hop_budget": delivery["status"] == "delivered"
+                        and delivery["hop_count"] <= task_envelope["max_hops"],
                     }
                     task_state["task_deliveries"].append(delivery_payload)
-                    if delivery_payload["eligible"] and delivery_payload["delivery_status"] == "delivered":
-                        delivered_candidates.append(delivery_payload)
-                    elif not delivery_payload["eligible"]:
+                    task_delivery_map[candidate["node"]] = delivery_payload
+                    if delivery_payload["delivery_status"] != "delivered":
                         node_mission_meta[candidate["node"]]["assignment_status"] = "standby"
 
-                if delivered_candidates:
-                    primary = delivered_candidates[0]
-                    backups = delivered_candidates[1:]
-                    task_state["status"] = "assigned"
+                candidate_scores = self._score_attack_candidates(
+                    area,
+                    target_contact,
+                    receipt_times,
+                    protocol,
+                    task_publish_ms,
+                    task_delivery_map=task_delivery_map,
+                    task_envelope=task_envelope,
+                )
+                search_state["candidate_scores"] = deepcopy(candidate_scores)
+                task_state["candidate_scores"] = deepcopy(candidate_scores)
+
+                delivered_bids: List[Dict] = []
+                for index, candidate in enumerate(candidate_scores, start=1):
+                    if not candidate["eligible"]:
+                        node_mission_meta[candidate["node"]]["assignment_status"] = "standby"
+                        continue
+
+                    bid_started_ms = round(
+                        (candidate.get("delivered_at_ms") or task_publish_ms) + rng.uniform(10.0, 24.0),
+                        1,
+                    )
+                    bid_deadline_ms = round(
+                        bid_started_ms + task_envelope["claim_timeout_ms"],
+                        1,
+                    )
+                    bid_delivery = self._simulate_message_delivery(
+                        delivery_id=f"bid-{task_state['task_id']}-{candidate['node']}",
+                        source_node=candidate["node"],
+                        target_node=active_control_node,
+                        started_at_ms=bid_started_ms,
+                        protocol=protocol,
+                        rng=rng,
+                        algorithm=algorithm,
+                        phase="task-bid",
+                        max_hops=task_envelope["max_hops"],
+                        expires_at_ms=bid_deadline_ms,
+                    )
+                    bid_path_metrics = self._path_link_metrics(
+                        bid_delivery["path"],
+                        protocol,
+                        bid_delivery["completed_at_ms"] or bid_started_ms,
+                    ) if bid_delivery["status"] == "delivered" and len(bid_delivery["path"]) > 1 else {
+                        "path_hops": 0,
+                        "avg_link_quality": 0.0,
+                        "weakest_link_quality": 0.0,
+                        "estimated_path_delay_ms": 0.0,
+                    }
+                    bid_payload = {
+                        **candidate,
+                        "candidate_rank": index,
+                        "bid_status": bid_delivery["status"],
+                        "bid_submitted_at_ms": bid_started_ms,
+                        "bid_deadline_ms": bid_deadline_ms,
+                        "bid_reported_at_ms": bid_delivery["completed_at_ms"],
+                        "bid_path": bid_delivery["path"],
+                        "bid_hops": bid_delivery["hop_count"],
+                        "bid_attempts": bid_delivery["attempts"],
+                        "bid_relay_used": bid_delivery["relay_used"],
+                        "bid_last_failure": bid_delivery["last_failure"],
+                        "bid_avg_link_quality": bid_path_metrics["avg_link_quality"],
+                        "bid_weakest_link_quality": bid_path_metrics["weakest_link_quality"],
+                    }
+                    task_state["auction_bids"].append(bid_payload)
+                    search_state["bid_submissions"].append(
+                        {
+                            "task_id": task_state["task_id"],
+                            "node": candidate["node"],
+                            "bid_score": candidate["bid_score"],
+                            "bid_status": bid_payload["bid_status"],
+                            "bid_reported_at_ms": bid_payload["bid_reported_at_ms"],
+                        }
+                    )
+                    if (
+                        bid_payload["bid_status"] == "delivered"
+                        and (bid_payload["bid_reported_at_ms"] or bid_deadline_ms)
+                        <= bid_deadline_ms
+                    ):
+                        delivered_bids.append(bid_payload)
+                        node_mission_meta[candidate["node"]]["assignment_status"] = "bid-submitted"
+                        search_state["timeline"].append(
+                            {
+                                "event": "task_bid_received",
+                                "object_id": target_contact["id"],
+                                "node": candidate["node"],
+                                "timestamp_ms": bid_payload["bid_reported_at_ms"],
+                            }
+                        )
+
+                delivered_bids.sort(
+                    key=lambda item: (
+                        -item["bid_score"],
+                        item["bid_reported_at_ms"] if item["bid_reported_at_ms"] is not None else float("inf"),
+                        item["path_hops"],
+                        item["node"],
+                    )
+                )
+
+                if delivered_bids:
+                    primary = delivered_bids[0]
+                    backups = delivered_bids[1:]
+                    selection_completed_ms = round(
+                        max(
+                            bid["bid_reported_at_ms"] or bid["bid_deadline_ms"]
+                            for bid in delivered_bids
+                        ),
+                        1,
+                    )
+                    lease = {
+                        "task_id": task_state["task_id"],
+                        "holder": primary["node"],
+                        "backup_holders": [candidate["node"] for candidate in backups],
+                        "started_at_ms": selection_completed_ms,
+                        "expires_at_ms": round(selection_completed_ms + task_envelope["lease_ms"], 1),
+                        "lease_ms": task_envelope["lease_ms"],
+                        "delegator_node": active_control_node,
+                        "preemptable": task_envelope["preempts_lower_priority"],
+                        "status": "active",
+                    }
+                    task_state["status"] = "leased"
                     task_state["primary_assignee"] = primary["node"]
                     task_state["backup_assignees"] = [candidate["node"] for candidate in backups]
-                    task_state["selection_completed_ms"] = max(
-                        candidate["delivered_at_ms"] or task_publish_ms for candidate in delivered_candidates
-                    )
+                    task_state["selection_completed_ms"] = selection_completed_ms
+                    task_state["lease"] = deepcopy(lease)
+                    task_state["lease_history"].append(deepcopy(lease))
                     search_state["assignment_completion_ms"] = task_state["selection_completed_ms"]
                     search_state["participating_nodes"].append(primary["node"])
                     for candidate in backups:
                         search_state["participating_nodes"].append(candidate["node"])
                     search_state["primary_assignee"] = primary["node"]
                     search_state["backup_assignees"] = [candidate["node"] for candidate in backups]
-                    node_mission_meta[primary["node"]]["assignment_status"] = "primary-assignee"
+                    self._upsert_active_lease(search_state["active_leases"], lease)
+                    node_mission_meta[primary["node"]]["assignment_status"] = "lease-holder"
                     node_mission_meta[primary["node"]]["assigned_targets"].append(target_contact["id"])
                     for backup_index, backup in enumerate(backups, start=1):
-                        node_mission_meta[backup["node"]]["assignment_status"] = "backup-assignee"
+                        node_mission_meta[backup["node"]]["assignment_status"] = "backup-bidder"
                         node_mission_meta[backup["node"]]["assigned_targets"].append(target_contact["id"])
                         node_mission_meta[backup["node"]]["fallback_rank"] = backup_index
                         search_state["timeline"].append(
@@ -1841,10 +2246,10 @@ class SwarmCoordinator:
                         )
                     search_state["timeline"].append(
                         {
-                            "event": "primary_assigned",
+                            "event": "lease_awarded",
                             "object_id": target_contact["id"],
                             "node": primary["node"],
-                            "timestamp_ms": primary["delivered_at_ms"],
+                            "timestamp_ms": selection_completed_ms,
                         }
                     )
 
@@ -1855,7 +2260,9 @@ class SwarmCoordinator:
                         engagement_start_ms = round(
                             max(
                                 task_state["selection_completed_ms"] or task_publish_ms,
-                                active_assignee.get("delivered_at_ms") or task_publish_ms,
+                                active_assignee.get("bid_reported_at_ms")
+                                or active_assignee.get("delivered_at_ms")
+                                or task_publish_ms,
                             ) + rng.uniform(65.0, 118.0),
                             1,
                         )
@@ -1901,6 +2308,17 @@ class SwarmCoordinator:
                                 node_mission_meta[active_control_node]["last_report_ms"] = bda["completed_at_ms"]
                             task_state["status"] = "target_neutralized"
                             task_state["completed_at_ms"] = bda["completed_at_ms"] or engagement["completed_at_ms"]
+                            if task_state["lease"]:
+                                completed_lease = deepcopy(task_state["lease"])
+                                completed_lease["status"] = "completed"
+                                completed_lease["completed_at_ms"] = task_state["completed_at_ms"]
+                                task_state["lease"] = completed_lease
+                                task_state["lease_history"][-1] = deepcopy(completed_lease)
+                                search_state["active_leases"] = [
+                                    lease
+                                    for lease in search_state["active_leases"]
+                                    if lease.get("task_id") != task_state["task_id"]
+                                ]
                             mission_end_ms = max(mission_end_ms, task_state["completed_at_ms"] or mission_end_ms)
                             search_state["mission_status"] = "target_neutralized"
                             search_state["mission_completion_ms"] = round(task_state["completed_at_ms"] or mission_end_ms, 1)
@@ -1938,6 +2356,8 @@ class SwarmCoordinator:
                                 rng=rng,
                                 algorithm=algorithm,
                                 phase="reassignment",
+                                max_hops=task_envelope["max_hops"],
+                                expires_at_ms=round(reassignment_start_ms + task_envelope["lease_ms"], 1),
                             )
                             history_entry = {
                                 "from": active_assignee["node"],
@@ -1950,11 +2370,46 @@ class SwarmCoordinator:
                             task_state["reassignment_history"].append(history_entry)
                             if reassignment["status"] == "delivered":
                                 backup_candidate["delivered_at_ms"] = reassignment["completed_at_ms"]
-                                node_mission_meta[backup_candidate["node"]]["assignment_status"] = "reassigned-primary"
+                                backup_candidate["bid_reported_at_ms"] = reassignment["completed_at_ms"]
+                                node_mission_meta[backup_candidate["node"]]["assignment_status"] = "lease-transfer"
+                                if task_state["lease_history"]:
+                                    transferred_lease = deepcopy(task_state["lease_history"][-1])
+                                    transferred_lease["status"] = "transferred"
+                                    transferred_lease["completed_at_ms"] = reassignment["completed_at_ms"]
+                                    task_state["lease_history"][-1] = transferred_lease
+                                new_lease = {
+                                    "task_id": task_state["task_id"],
+                                    "holder": backup_candidate["node"],
+                                    "backup_holders": [candidate["node"] for candidate in backup_queue],
+                                    "started_at_ms": reassignment["completed_at_ms"],
+                                    "expires_at_ms": round(
+                                        reassignment["completed_at_ms"] + task_envelope["lease_ms"],
+                                        1,
+                                    ),
+                                    "lease_ms": task_envelope["lease_ms"],
+                                    "delegator_node": active_control_node,
+                                    "preemptable": task_envelope["preempts_lower_priority"],
+                                    "status": "active",
+                                }
+                                task_state["lease"] = deepcopy(new_lease)
+                                task_state["lease_history"].append(deepcopy(new_lease))
+                                task_state["primary_assignee"] = backup_candidate["node"]
+                                task_state["backup_assignees"] = [candidate["node"] for candidate in backup_queue]
+                                search_state["primary_assignee"] = backup_candidate["node"]
+                                search_state["backup_assignees"] = [candidate["node"] for candidate in backup_queue]
+                                self._upsert_active_lease(search_state["active_leases"], new_lease)
                                 next_assignee = backup_candidate
                                 search_state["timeline"].append(
                                     {
                                         "event": "target_reassigned",
+                                        "object_id": target_contact["id"],
+                                        "node": backup_candidate["node"],
+                                        "timestamp_ms": reassignment["completed_at_ms"],
+                                    }
+                                )
+                                search_state["timeline"].append(
+                                    {
+                                        "event": "lease_transferred",
                                         "object_id": target_contact["id"],
                                         "node": backup_candidate["node"],
                                         "timestamp_ms": reassignment["completed_at_ms"],
@@ -1965,6 +2420,17 @@ class SwarmCoordinator:
                         if next_assignee is None:
                             task_state["status"] = target_contact.get("fallback_action", "mark_for_external_fires")
                             task_state["completed_at_ms"] = engagement["completed_at_ms"]
+                            if task_state["lease"]:
+                                failed_lease = deepcopy(task_state["lease"])
+                                failed_lease["status"] = "released"
+                                failed_lease["completed_at_ms"] = engagement["completed_at_ms"]
+                                task_state["lease"] = failed_lease
+                                task_state["lease_history"][-1] = deepcopy(failed_lease)
+                                search_state["active_leases"] = [
+                                    lease
+                                    for lease in search_state["active_leases"]
+                                    if lease.get("task_id") != task_state["task_id"]
+                                ]
                             search_state["mission_status"] = task_state["status"]
                             search_state["mission_completion_ms"] = round(engagement["completed_at_ms"], 1)
                             search_state["timeline"].append(
@@ -1991,7 +2457,7 @@ class SwarmCoordinator:
                     search_state["target_tasks"].append(task_state)
                     search_state["timeline"].append(
                         {
-                            "event": "no_attack_assignee_available",
+                            "event": "no_bid_winner_available",
                             "object_id": target_contact["id"],
                             "node": active_control_node,
                             "timestamp_ms": task_publish_ms,
