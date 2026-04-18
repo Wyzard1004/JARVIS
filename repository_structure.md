@@ -5,41 +5,41 @@ For this 48-hour hackathon, we are using a Monorepo approach. This keeps all sys
 Directory Tree
 
 jarvis-swarm/
-├── base_station/              # BACKEND (Python) - Hosted on Jetson Orin
-│   ├── api/                   # FastAPI routes, WebSockets
-│   │   └── main.py            # App entry point
-│   ├── core/
-│   │   ├── ai_bridge.py       # Ollama JSON parsing & ElevenLabs TTS
-│   │   ├── swarm_logic.py     # NetworkX Gossip protocol graph logic
-│   │   └── mqtt_client.py     # Mosquitto MQTT publisher/subscriber
-│   ├── requirements.txt       # Python dependencies
-│   └── .env.example           # Keep ElevenLabs API keys out of commits!
-│
-├── command_center/            # FRONTEND (React / Vite) - The UI
-│   ├── src/
-│   │   ├── components/        # UI Widgets (Push-to-Talk button, status panels)
-│   │   ├── graph/             # `react-force-graph` implementation
-│   │   └── hooks/             # WebSocket/Socket.io listener hooks
-│   ├── package.json
-│   ├── vite.config.js
-│   └── tailwind.config.js
-│
-├── hardware/                  # EDGE HARDWARE (C++ / Arduino)
-│   ├── gateway_node/          # ESP32-1: Listens to MQTT over WiFi, sends ESP-NOW
-│   │   └── gateway_node.ino
-│   └── field_node/            # ESP32-2 & 3: Listens to ESP-NOW, toggles LEDs
-│       └── field_node.ino
-│
-├── simulations/               # MATH & BENCHMARKS (Python)
-│   ├── tcp_vs_gossip.py       # Speed-up comparison logic
-│   └── outputs/               # Auto-generated Matplotlib charts for the pitch deck
-│
-├── docs/                      # PITCH & DESIGN
-│   ├── mission_canvas.md      # H4D Dual-Use Business Logic
-│   └── architecture.png       # Graph of how JARVIS works
-│
-├── .gitignore                 # MUST include: node_modules, .env, __pycache__, venv
-└── README.md                  # Instructions on how to run the physical demo
+â”œâ”€â”€ base_station/              # BACKEND (Python) - Hosted on Jetson Orin
+â”‚   â”œâ”€â”€ api/                   # FastAPI routes, WebSockets
+â”‚   â”‚   â””â”€â”€ main.py            # App entry point
+â”‚   â”œâ”€â”€ core/
+â”‚   â”‚   â”œâ”€â”€ ai_bridge.py       # Ollama JSON parsing & ElevenLabs TTS
+â”‚   â”‚   â”œâ”€â”€ swarm_logic.py     # NetworkX Gossip protocol graph logic
+â”‚   â”‚   â””â”€â”€ mqtt_client.py     # Mosquitto MQTT publisher/subscriber
+â”‚   â”œâ”€â”€ requirements.txt       # Python dependencies
+â”‚   â””â”€â”€ .env           # Local-only secrets, never commit
+â”‚
+â”œâ”€â”€ command_center/            # FRONTEND (React / Vite) - The UI
+â”‚   â”œâ”€â”€ src/
+â”‚   â”‚   â”œâ”€â”€ components/        # UI Widgets (Push-to-Talk button, status panels)
+â”‚   â”‚   â”œâ”€â”€ graph/             # `react-force-graph` implementation
+â”‚   â”‚   â””â”€â”€ hooks/             # WebSocket/Socket.io listener hooks
+â”‚   â”œâ”€â”€ package.json
+â”‚   â”œâ”€â”€ vite.config.js
+â”‚   â””â”€â”€ tailwind.config.js
+â”‚
+â”œâ”€â”€ hardware/                  # EDGE HARDWARE (C++ / Arduino)
+â”‚   â”œâ”€â”€ gateway_node/          # ESP32-1: Listens to MQTT over WiFi, sends ESP-NOW
+â”‚   â”‚   â””â”€â”€ gateway_node.ino
+â”‚   â””â”€â”€ field_node/            # ESP32-2 & 3: Listens to ESP-NOW, toggles LEDs
+â”‚       â””â”€â”€ field_node.ino
+â”‚
+â”œâ”€â”€ simulations/               # MATH & BENCHMARKS (Python)
+â”‚   â”œâ”€â”€ tcp_vs_gossip.py       # Speed-up comparison logic
+â”‚   â””â”€â”€ outputs/               # Auto-generated Matplotlib charts for the pitch deck
+â”‚
+â”œâ”€â”€ docs/                      # PITCH & DESIGN
+â”‚   â”œâ”€â”€ mission_canvas.md      # H4D Dual-Use Business Logic
+â”‚   â””â”€â”€ architecture.png       # Graph of how JARVIS works
+â”‚
+â”œâ”€â”€ .gitignore                 # MUST include: node_modules, .env, __pycache__, venv
+â””â”€â”€ README.md                  # Instructions on how to run the physical demo
 
 
 Separation of Concerns (Why this works for us)

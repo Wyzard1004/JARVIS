@@ -1,6 +1,6 @@
 # 4.0.0 Full-Stack Integration Setup Guide
 
-> **Target**: William's section — Full-Stack Integration & Command UI
+> **Target**: William's section Ã¢â‚¬â€ Full-Stack Integration & Command UI
 
 This guide walks you through everything needed to get the FastAPI backend and React frontend running in parallel with the core modules from Richard (ai_bridge) and Giulia (swarm_logic).
 
@@ -11,13 +11,13 @@ This guide walks you through everything needed to get the FastAPI backend and Re
 **File**: [base_station/api/main.py](../base_station/api/main.py)
 
 **Includes**:
-- ✅ FastAPI app skeleton with CORS middleware
-- ✅ Health check endpoint (`GET /health`)
-- ✅ WebSocket connection manager for real-time UI syncing (`/ws/swarm`)
-- ✅ Voice command intake endpoint (`POST /api/voice-command`)
-- ✅ Swarm state query endpoint (`GET /api/swarm-state`)
-- ✅ Lifecycle hooks (startup/shutdown)
-- ✅ TodoPlaceholders for MQTT publisher, AI Bridge, and Swarm Logic integration
+- Ã¢Å“â€¦ FastAPI app skeleton with CORS middleware
+- Ã¢Å“â€¦ Health check endpoint (`GET /health`)
+- Ã¢Å“â€¦ WebSocket connection manager for real-time UI syncing (`/ws/swarm`)
+- Ã¢Å“â€¦ Voice command intake endpoint (`POST /api/voice-command`)
+- Ã¢Å“â€¦ Swarm state query endpoint (`GET /api/swarm-state`)
+- Ã¢Å“â€¦ Lifecycle hooks (startup/shutdown)
+- Ã¢Å“â€¦ TodoPlaceholders for MQTT publisher, AI Bridge, and Swarm Logic integration
 
 **Dependencies**: [base_station/requirements.txt](../base_station/requirements.txt)
 - `fastapi`, `uvicorn`, `paho-mqtt`, `requests`, `python-dotenv`, `websockets`, `networkx`
@@ -25,12 +25,12 @@ This guide walks you through everything needed to get the FastAPI backend and Re
 ### Frontend (React / Vite)
 
 **Includes**:
-- ✅ [command_center/src/App.jsx](../command_center/src/App.jsx) — Main app component with WebSocket listener
-- ✅ [command_center/src/components/SwarmGraph.jsx](../command_center/src/components/SwarmGraph.jsx) — `react-force-graph` visualization
-- ✅ [command_center/src/components/PushToTalkButton.jsx](../command_center/src/components/PushToTalkButton.jsx) — Microphone input + mock transcript
-- ✅ [command_center/src/components/StatusPanel.jsx](../command_center/src/components/StatusPanel.jsx) — System status display
-- ✅ Tailwind CSS + PostCSS configuration
-- ✅ Vite dev server with proxy to FastAPI backend
+- Ã¢Å“â€¦ [command_center/src/App.jsx](../command_center/src/App.jsx) Ã¢â‚¬â€ Main app component with WebSocket listener
+- Ã¢Å“â€¦ [command_center/src/components/SwarmGraph.jsx](../command_center/src/components/SwarmGraph.jsx) Ã¢â‚¬â€ `react-force-graph` visualization
+- Ã¢Å“â€¦ [command_center/src/components/PushToTalkButton.jsx](../command_center/src/components/PushToTalkButton.jsx) Ã¢â‚¬â€ Microphone input + mock transcript
+- Ã¢Å“â€¦ [command_center/src/components/StatusPanel.jsx](../command_center/src/components/StatusPanel.jsx) Ã¢â‚¬â€ System status display
+- Ã¢Å“â€¦ Tailwind CSS + PostCSS configuration
+- Ã¢Å“â€¦ Vite dev server with proxy to FastAPI backend
 
 **Dependencies**: [command_center/package.json](../command_center/package.json)
 - `react`, `react-dom`, `react-force-graph`, `socket.io-client`, `axios`, `tailwindcss`
@@ -39,7 +39,7 @@ This guide walks you through everything needed to get the FastAPI backend and Re
 
 **File**: [.env](.env) (local development)
 
-**Create from**: [.env.example](.env.example)
+**Use**: `base_station/.env`
 
 **Required keys**:
 - `ELEVENLABS_API_KEY` - For TTS confirmations
@@ -82,7 +82,7 @@ Open http://localhost:5173 in your browser.
 
 ## Integration Checkpoints
 
-### Checkpoint 1: Backend ← Richard's AI Bridge (3.1 & 3.2)
+### Checkpoint 1: Backend Ã¢â€ Â Richard's AI Bridge (3.1 & 3.2)
 
 **Where to plug in**: [base_station/api/main.py](../base_station/api/main.py) line ~85
 
@@ -93,7 +93,7 @@ from core.ai_bridge import AIBridge
 parsed_intent = await ai_bridge.process_voice_command(transcribed_text)
 ```
 
-### Checkpoint 2: Backend ← Giulia's Swarm Logic (2.1 & 2.2)
+### Checkpoint 2: Backend Ã¢â€ Â Giulia's Swarm Logic (2.1 & 2.2)
 
 **Where to plug in**: [base_station/api/main.py](../base_station/api/main.py) line ~95
 
@@ -104,7 +104,7 @@ from core.swarm_logic import SwarmLogic
 gossip_result = await swarm_logic.calculate_gossip_path(parsed_intent)
 ```
 
-### Checkpoint 3: Backend → MQTT Publisher (Hardware)
+### Checkpoint 3: Backend Ã¢â€ â€™ MQTT Publisher (Hardware)
 
 **Where to plug in**: [base_station/api/main.py](../base_station/api/main.py) line ~102
 
@@ -118,7 +118,7 @@ mqtt_publisher = MQTTPublisher(host, port, client_id)
 await mqtt_publisher.publish("swarm/command", json.dumps(gossip_result))
 ```
 
-### Checkpoint 4: Backend → React (WebSocket)
+### Checkpoint 4: Backend Ã¢â€ â€™ React (WebSocket)
 
 **Already implemented** in [App.jsx](../command_center/src/App.jsx#L14-L40)
 
@@ -158,9 +158,9 @@ sudo systemctl start mosquitto
 
 ---
 
-## Expected WebSocket Message Format (React ↔ Backend)
+## Expected WebSocket Message Format (React Ã¢â€ â€ Backend)
 
-### Backend → React (Gossip Update)
+### Backend Ã¢â€ â€™ React (Gossip Update)
 ```json
 {
   "event": "gossip_update",
@@ -172,7 +172,7 @@ sudo systemctl start mosquitto
 }
 ```
 
-### React → Backend (Voice Command)
+### React Ã¢â€ â€™ Backend (Voice Command)
 ```json
 {
   "transcribed_text": "JARVIS, re-route swarm to Grid Alpha"
@@ -200,4 +200,4 @@ sudo systemctl start mosquitto
 3. **Sebastian**: Implement [base_station/core/mqtt_client.py](../base_station/core/mqtt_client.py) MQTT publisher
 4. **William**: Integrate all three modules into main.py, refine React UI (4.3.1-4.3.2)
 
-Good luck! 🚀
+Good luck! Ã°Å¸Å¡â‚¬

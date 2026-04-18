@@ -123,7 +123,6 @@ Before implementation, gather or define these inputs:
 ## What Should Go In `.env`
 
 Use `base_station/.env` locally and keep it untracked.
-The committed template lives in `base_station/.env.example`.
 
 Expected values:
 
@@ -131,7 +130,6 @@ Expected values:
 - `OLLAMA_MODEL`
 - `ELEVENLABS_API_KEY`
 - `ELEVENLABS_VOICE_ID`
-- `ELEVENLABS_MODEL_ID`
 - `JARVIS_PARSER_MODE`
 - `JARVIS_DEMO_MODE`
 - `JARVIS_ALLOWED_GOALS`
@@ -142,7 +140,7 @@ Expected values:
 Use the normal local-development pattern:
 
 - store real secrets in a local `.env` file
-- commit only `.env.example`
+- keep secrets in local environment files only
 - read secrets from environment variables in code
 - never hardcode API keys in Python files
 - never paste real secrets into markdown or git commits
