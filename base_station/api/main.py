@@ -10,6 +10,7 @@ This is the nervous system of JARVIS:
 """
 
 import os
+import json
 from pathlib import Path
 from typing import Dict, Set
 from datetime import datetime
@@ -203,22 +204,39 @@ async def websocket_swarm_endpoint(websocket: WebSocket):
             "timestamp": datetime.now().isoformat()
         })
         
+        # Send initial swarm topology
+        swarm = get_swarm()
+        initial_state = swarm.get_state()
+        await websocket.send_json({
+            "event": "swarm_state",
+            "data": initial_state,
+            "nodes": initial_state.get("nodes", []),
+            "edges": initial_state.get("edges", []),
+            "timestamp": datetime.now().isoformat()
+        })
+        print("[WebSocket] Sent initial swarm topology to client")
+        
         # Handle incoming messages
         while True:
-            data = await websocket.receive_text()
             try:
-                message = json.loads(data)
-                print(f"[WebSocket] Received: {message}")
-            except json.JSONDecodeError:
-                print(f"[WebSocket] Invalid JSON: {data}")
+                data = await websocket.receive_text()
+                try:
+                    message = json.loads(data)
+                    print(f"[WebSocket] Received: {message}")
+                except json.JSONDecodeError:
+                    print(f"[WebSocket] Invalid JSON: {data}")
+            except WebSocketDisconnect:
+                print(f"[WebSocket] Client disconnected gracefully")
+                break
             
+    except WebSocketDisconnect:
+        print(f"[WebSocket] Client disconnected during handshake or message handling")
     except Exception as e:
         print(f"[WebSocket ERROR] {type(e).__name__}: {e}")
-        manager.disconnect(websocket)
     
     finally:
-        print(f"[WebSocket] Client disconnected")
         manager.disconnect(websocket)
+        print(f"[WebSocket] Cleaned up connection for {websocket.client}")
 
 
 # ============================================================

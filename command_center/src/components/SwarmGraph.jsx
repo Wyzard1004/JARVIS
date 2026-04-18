@@ -16,28 +16,28 @@ function SwarmGraph({ state }) {
   const [propagationTimings, setPropagationTimings] = useState({})
   const [currentTime, setCurrentTime] = useState(0)
 
+  // Handle propagation animation timing separately
   useEffect(() => {
-    if (!svgRef.current) return
+    if (!state?.data?.propagation_order) return
 
     // Build propagation timing map for pulse animation
-    if (state?.data?.propagation_order) {
-      const timings = {}
-      state.data.propagation_order.forEach(event => {
-        timings[event.node] = event.timestamp_ms
-      })
-      setPropagationTimings(timings)
-      
-      // Start animation timer
-      const startTime = Date.now()
-      const interval = setInterval(() => {
-        const elapsed = Date.now() - startTime
-        setCurrentTime(elapsed)
-      }, 50)
-      
-      return () => clearInterval(interval)
-    }
+    const timings = {}
+    state.data.propagation_order.forEach(event => {
+      timings[event.node] = event.timestamp_ms
+    })
+    setPropagationTimings(timings)
+    
+    // Start animation timer
+    const startTime = Date.now()
+    const interval = setInterval(() => {
+      const elapsed = Date.now() - startTime
+      setCurrentTime(elapsed)
+    }, 50)
+    
+    return () => clearInterval(interval)
   }, [state?.data?.propagation_order])
 
+  // Initialize and update the D3 visualization only when state changes
   useEffect(() => {
     if (!svgRef.current) return
 
@@ -65,11 +65,13 @@ function SwarmGraph({ state }) {
       .attr('height', height)
       .attr('viewBox', [0, 0, width, height])
 
-    // Create force simulation
+    // Create force simulation with stabilization settings
     const simulation = d3.forceSimulation(nodes)
       .force('link', d3.forceLink(links).id(d => d.id).distance(100))
       .force('charge', d3.forceManyBody().strength(-300))
       .force('center', d3.forceCenter(width / 2, height / 2))
+      .alphaDecay(0.03)  // Higher decay = settles faster
+      .velocityDecay(0.6)  // Higher = less bouncy
 
     simulationRef.current = simulation
 
@@ -95,7 +97,6 @@ function SwarmGraph({ state }) {
           
           // Pulse for 200ms after event
           if (timeSinceEvent >= 0 && timeSinceEvent < 200) {
-            const pulseFraction = (timeSinceEvent % 100) / 100
             const isInPulse = (timeSinceEvent % 100) < 50
             return isInPulse ? '#FCA5A5' : '#EF4444'
           }
@@ -161,7 +162,7 @@ function SwarmGraph({ state }) {
     })
 
     return () => simulation.stop()
-  }, [state, currentTime, propagationTimings])
+  }, [state, propagationTimings])  // Only recreate when state or propagationTimings change, NOT currentTime
 
   function drag(simulation) {
     function dragstarted(event, d) {

@@ -65,9 +65,21 @@ class SwarmLogic:
         self.graph.add_edge("gateway", "field-2")
         self.graph.add_edge("field-1", "field-2")  # Field drones can gossip with each other
         
+        # Initialize current state with proper topology
         self.current_state = {
-            "nodes": [],
-            "edges": [],
+            "nodes": [
+                {
+                    "id": node.id,
+                    "status": node.status,
+                    "x": node.x,
+                    "y": node.y
+                }
+                for node in self.nodes.values()
+            ],
+            "edges": [
+                {"source": u, "target": v}
+                for u, v in self.graph.edges()
+            ],
             "propagation_order": [],
             "status": "idle"
         }
