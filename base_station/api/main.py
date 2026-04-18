@@ -13,6 +13,7 @@ import os
 import asyncio
 import json
 from typing import Dict, List, Set
+from datetime import datetime
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
@@ -23,7 +24,7 @@ load_dotenv()
 
 # Import our core modules (once they're built by Richard & Giulia)
 # from core.ai_bridge import AIBridge
-# from core.swarm_logic import SwarmLogic
+from core.swarm_logic import get_swarm
 # from core.mqtt_client import MQTTPublisher
 
 # Initialize FastAPI app
@@ -142,10 +143,17 @@ async def voice_command(payload: Dict):
         return {"error": "No transcription provided"}
     
     # TODO: Integrate ai_bridge.process_voice_command(transcribed_text)
-    # parsed_intent = await ai_bridge.process_voice_command(transcribed_text)
+    # For now, use a mock intent that works with swarm_logic
+    parsed_intent = {
+        "intent": "swarm",
+        "target": "Grid Alpha",
+        "action": "RED_ALERT",
+        "transcribed_text": transcribed_text
+    }
     
-    # TODO: Integrate swarm_logic.calculate_gossip_path(parsed_intent)
-    # gossip_result = await swarm_logic.calculate_gossip_path(parsed_intent)
+    # Integrate swarm_logic.calculate_gossip_path(parsed_intent)
+    swarm = get_swarm()
+    gossip_result = swarm.calculate_gossip_path(parsed_intent)
     
     # TODO: Publish to MQTT via mqtt_client
     # await mqtt_publisher.publish("swarm/command", json.dumps(gossip_result))
@@ -153,13 +161,15 @@ async def voice_command(payload: Dict):
     # Broadcast update to all connected React clients
     await manager.broadcast({
         "event": "gossip_update",
-        "status": "processing",
+        "status": "propagating",
+        "data": gossip_result,
         "transcribed_text": transcribed_text
     })
     
     return {
-        "status": "received",
-        "message": "Command queued for processing"
+        "status": "propagating",
+        "message": "Command executing via gossip protocol",
+        "gossip_data": gossip_result
     }
 
 
@@ -175,18 +185,15 @@ async def get_swarm_state():
     Returns node positions, active agents, gossip status, etc.
     Used by React to initialize the force-graph on load.
     """
-    # TODO: Call swarm_logic.get_current_state()
+    swarm = get_swarm()
+    state = swarm.get_state()
+    
     return {
-        "nodes": [
-            {"id": "node_1", "status": "active", "x": 0, "y": 0},
-            {"id": "node_2", "status": "idle", "x": 100, "y": 50},
-            {"id": "node_3", "status": "idle", "x": -100, "y": -50},
-        ],
-        "edges": [
-            {"source": "node_1", "target": "node_2"},
-            {"source": "node_1", "target": "node_3"},
-        ],
-        "timestamp": "2026-04-18T12:00:00Z"
+        "nodes": state.get("nodes", []),
+        "edges": state.get("edges", []),
+        "propagation_order": state.get("propagation_order", []),
+        "status": state.get("status", "idle"),
+        "timestamp": datetime.now().isoformat()
     }
 
 
@@ -198,6 +205,8 @@ async def get_swarm_state():
 async def startup_event():
     """Initialize connections when the server starts"""
     print("[STARTUP] JARVIS Base Station initializing...")
+    swarm = get_swarm()
+    print(f"[STARTUP] Swarm topology initialized: {len(swarm.graph.nodes)} nodes")
     # TODO: Initialize MQTT client
     # TODO: Initialize AI Bridge
     # TODO: Connect to Ollama
