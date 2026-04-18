@@ -1,24 +1,51 @@
-import React, { useEffect, useRef } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import * as d3 from 'd3'
 
 /**
- * SwarmGraph Component (4.2.2)
+ * SwarmGraph Component (4.2.2 & 4.3.1)
  * 
  * Visualizes the swarm topology using D3 force simulation.
  * Maps WebSocket updates to node/link positions.
  * Animates when nodes move toward target coordinates.
+ * Pulses nodes when they receive gossip commands.
  */
 
 function SwarmGraph({ state }) {
   const svgRef = useRef()
   const simulationRef = useRef()
+  const [propagationTimings, setPropagationTimings] = useState({})
+  const [currentTime, setCurrentTime] = useState(0)
+
+  useEffect(() => {
+    if (!svgRef.current) return
+
+    // Build propagation timing map for pulse animation
+    if (state?.data?.propagation_order) {
+      const timings = {}
+      state.data.propagation_order.forEach(event => {
+        timings[event.node] = event.timestamp_ms
+      })
+      setPropagationTimings(timings)
+      
+      // Start animation timer
+      const startTime = Date.now()
+      const interval = setInterval(() => {
+        const elapsed = Date.now() - startTime
+        setCurrentTime(elapsed)
+      }, 50)
+      
+      return () => clearInterval(interval)
+    }
+  }, [state?.data?.propagation_order])
 
   useEffect(() => {
     if (!svgRef.current) return
 
     const nodes = (state?.nodes || []).map(node => ({
       id: node.id,
-      status: node.status
+      status: node.status,
+      x: node.x,
+      y: node.y
     }))
 
     const links = (state?.edges || []).map(edge => ({
@@ -56,12 +83,48 @@ function SwarmGraph({ state }) {
 
     // Draw nodes
     const node = svg.selectAll('circle')
-      .data(nodes)
+      .data(nodes, d => d.id)
       .enter()
       .append('circle')
       .attr('r', 8)
-      .attr('fill', d => d.status === 'active' ? '#EF4444' : '#6B7280')
+      .attr('fill', d => {
+        // Pulse effect: nodes pulse red during propagation window
+        if (propagationTimings[d.id] !== undefined) {
+          const nodeTime = propagationTimings[d.id]
+          const timeSinceEvent = currentTime - nodeTime
+          
+          // Pulse for 200ms after event
+          if (timeSinceEvent >= 0 && timeSinceEvent < 200) {
+            const pulseFraction = (timeSinceEvent % 100) / 100
+            const isInPulse = (timeSinceEvent % 100) < 50
+            return isInPulse ? '#FCA5A5' : '#EF4444'
+          }
+        }
+        
+        return d.status === 'active' ? '#EF4444' : '#6B7280'
+      })
       .call(drag(simulation))
+
+    // Draw pulse circles for animation
+    const pulseCircles = svg.selectAll('.pulse')
+      .data(nodes.filter(d => propagationTimings[d.id] !== undefined))
+      .enter()
+      .append('circle')
+      .attr('class', 'pulse')
+      .attr('r', 8)
+      .attr('fill', 'none')
+      .attr('stroke', '#EF4444')
+      .attr('stroke-width', 2)
+      .attr('opacity', d => {
+        const nodeTime = propagationTimings[d.id]
+        const timeSinceEvent = currentTime - nodeTime
+        
+        if (timeSinceEvent >= 0 && timeSinceEvent < 400) {
+          // Fade out after 400ms
+          return 1 - (timeSinceEvent / 400)
+        }
+        return 0
+      })
 
     // Draw labels
     const labels = svg.selectAll('text')
@@ -87,7 +150,10 @@ function SwarmGraph({ state }) {
       node
         .attr('cx', d => d.x)
         .attr('cy', d => d.y)
-        .attr('fill', d => d.status === 'active' ? '#EF4444' : '#6B7280')
+
+      pulseCircles
+        .attr('cx', d => d.x)
+        .attr('cy', d => d.y)
 
       labels
         .attr('x', d => d.x)
@@ -95,7 +161,7 @@ function SwarmGraph({ state }) {
     })
 
     return () => simulation.stop()
-  }, [state])
+  }, [state, currentTime, propagationTimings])
 
   function drag(simulation) {
     function dragstarted(event, d) {
