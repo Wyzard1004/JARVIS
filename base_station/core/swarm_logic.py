@@ -991,6 +991,163 @@ class SwarmCoordinator:
         """Get all active gossip messages."""
         return [self.get_gossip_message_state(msg_id) for msg_id in self._gossip_messages.keys()]
 
+    def _compat_sender_id(self, command: Dict) -> str:
+        sender_id = command.get("origin") or command.get("operator_node")
+        if sender_id and sender_id in self._drone_positions:
+            return sender_id
+
+        for preferred in self._operator_nodes():
+            if preferred in self._drone_positions:
+                return preferred
+
+        if self._drone_positions:
+            return next(iter(self._drone_positions.keys()))
+        return "gateway"
+
+    def _compat_priority(self, command: Dict) -> str:
+        action = str(command.get("action_code") or "").upper()
+        if action in {"ENGAGE_TARGET", "ABORT"}:
+            return "critical"
+        if action in {"SEARCH", "MOVE_TO", "SYNC"}:
+            return "high"
+        return "medium"
+
+    def _compat_target_pixel(self, target_location: Optional[str]) -> Tuple[float, float]:
+        if not target_location:
+            return (0.0, 0.0)
+
+        normalized = target_location.strip().lower()
+        quick_map = {
+            "grid alpha": (6, 6),
+            "grid bravo": (10, 10),
+            "grid charlie": (14, 14),
+        }
+        grid_pos = quick_map.get(normalized)
+        if grid_pos is None:
+            return (0.0, 0.0)
+
+        x, y = self.grid_system.grid_to_pixel(grid_pos[0], grid_pos[1])
+        return (float(x), float(y))
+
+    def _compat_nodes(self) -> List[Dict]:
+        nodes = []
+        for node in self._base_nodes:
+            node_id = node["id"]
+            grid_position = self._drone_positions.get(node_id, (13, 13))
+            x, y = self.grid_system.grid_to_pixel(grid_position[0], grid_position[1])
+            nodes.append(
+                {
+                    **deepcopy(node),
+                    "status": node.get("status", "active"),
+                    "x": float(x),
+                    "y": float(y),
+                    "grid_position": grid_position,
+                    "transmission_range": self._transmission_ranges.get(node_id, 3),
+                }
+            )
+        return nodes
+
+    def _compat_edges(self, origin: str, initial_hops: List[str]) -> List[Dict]:
+        hop_set = set(initial_hops)
+        edges = []
+        for edge in self.calculate_transmission_graph():
+            source = edge["source"]
+            target = edge["target"]
+            status = "ready"
+            if (source == origin and target in hop_set) or (target == origin and source in hop_set):
+                status = "propagated"
+
+            edges.append(
+                {
+                    "id": f"{source}-{target}",
+                    "source": source,
+                    "target": target,
+                    "quality": edge.get("quality", 0.5),
+                    "status": status,
+                    "in_spanning_tree": edge.get("in_spanning_tree", False),
+                }
+            )
+        return edges
+
+    def _compat_propagation_order(self, origin: str, initial_hops: List[str], message_id: str) -> List[Dict]:
+        propagation_order = [
+            {
+                "node": origin,
+                "from": None,
+                "timestamp_ms": 0.0,
+                "delay_from_previous": 0.0,
+                "hop": 0,
+                "message_id": message_id,
+                "path": [origin],
+            }
+        ]
+
+        elapsed_ms = 0.0
+        for hop_index, node_id in enumerate(initial_hops, start=1):
+            elapsed_ms += 55.0
+            propagation_order.append(
+                {
+                    "node": node_id,
+                    "from": origin,
+                    "timestamp_ms": elapsed_ms,
+                    "delay_from_previous": 55.0,
+                    "hop": 1,
+                    "message_id": message_id,
+                    "path": [origin, node_id],
+                }
+            )
+
+        return propagation_order
+
+    def _compat_consensus_result(self, command: Dict, algorithm: str) -> Dict:
+        sender_id = self._compat_sender_id(command)
+        priority = self._compat_priority(command)
+        message_content = str(command.get("transcribed_text") or command.get("action_code") or "COMMAND")
+        target_location = command.get("target_location")
+
+        broadcast = self.broadcast_message(
+            sender_id=sender_id,
+            message_content=message_content,
+            priority=priority,
+        )
+        initial_hops = list(broadcast.get("initial_hops", []))
+        message_id = broadcast.get("message_id", "gossip-compat")
+        propagation_order = self._compat_propagation_order(sender_id, initial_hops, message_id)
+        target_x, target_y = self._compat_target_pixel(target_location)
+
+        nodes = self._compat_nodes()
+        edges = self._compat_edges(sender_id, initial_hops)
+
+        return {
+            "status": "propagating",
+            "algorithm": algorithm,
+            "target_location": target_location,
+            "target_x": target_x,
+            "target_y": target_y,
+            "nodes": nodes,
+            "edges": edges,
+            "active_nodes": [node["id"] for node in nodes if node.get("status") == "active"],
+            "propagation_order": propagation_order,
+            "total_propagation_ms": propagation_order[-1]["timestamp_ms"] if propagation_order else 0.0,
+            "search_state": {
+                "control_node": sender_id,
+                "mission_status": "propagating",
+                "target_location": target_location,
+            },
+            "benchmark": {
+                "algorithm": f"{algorithm}-compat",
+                "simulations": 0,
+            },
+        }
+
+    def calculate_gossip_path(self, command: Dict) -> Dict:
+        """Backward-compatible entrypoint expected by older API layers."""
+        return self._compat_consensus_result(command, algorithm="gossip")
+
+    def calculate_raft_path(self, command: Dict) -> Dict:
+        """Backward-compatible entrypoint expected by older API layers."""
+        return self._compat_consensus_result(command, algorithm="raft")
+
     def get_state(self) -> Dict:
         """Return the latest swarm state including topology and drone info."""
         state = deepcopy(self._last_state)
