@@ -1,0 +1,9 @@
+fastapi
+uvicorn
+paho-mqtt
+requests
+python-dotenv
+python-multipart
+websockets
+networkx
+aiofiles
