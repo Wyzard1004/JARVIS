@@ -7,3 +7,5 @@ python-multipart==0.0.26
 websockets==16.0
 networkx==3.4.2
 aiofiles==25.1.0
+openwakeword==0.6.0
+PyAudio==0.2.14
