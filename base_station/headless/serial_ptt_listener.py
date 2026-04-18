@@ -272,8 +272,36 @@ class JetsonSerialPTTListener:
         if not event:
             return None
 
+        event = self._normalize_serial_event(event)
         print(f"[PTT] ESP32 event: {event}")
         return event
+
+    @classmethod
+    def _normalize_serial_event(cls, event: str) -> str:
+        normalized = event.strip().upper()
+
+        if normalized.endswith("PTT_DOWN") or normalized.endswith("TT_DOWN"):
+            return "PTT_DOWN"
+        if normalized.endswith("PTT_UP") or normalized.endswith("TT_UP"):
+            return "PTT_UP"
+        if normalized.endswith("BUTTON_DOWN"):
+            return "BUTTON_DOWN"
+        if normalized.endswith("BUTTON_UP"):
+            return "BUTTON_UP"
+        if normalized.endswith("START_LISTEN"):
+            return "START_LISTEN"
+        if normalized.endswith("STOP_LISTEN"):
+            return "STOP_LISTEN"
+        if normalized.endswith("START"):
+            return "START"
+        if normalized.endswith("STOP"):
+            return "STOP"
+        if normalized.endswith("CANCEL"):
+            return "CANCEL"
+        if normalized.endswith("ABORT"):
+            return "ABORT"
+
+        return normalized
 
     def _write_serial(self, message: str) -> None:
         if self._serial is None or not self._serial.is_open:
