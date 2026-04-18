@@ -166,9 +166,9 @@ class JetsonWakeListener:
         open_kwargs = {
             "format": pyaudio.paInt16,
             "channels": self.channels,
-            "rate": self.sample_rate,
+            "rate": self._device_sample_rate,
             "input": True,
-            "frames_per_buffer": self.chunk_samples,
+            "frames_per_buffer": self._device_chunk_samples,
         }
         if self._selected_device_index is not None:
             open_kwargs["input_device_index"] = self._selected_device_index
