@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import audioop
 import io
 import os
 import signal
@@ -56,6 +57,7 @@ class JetsonWakeListener:
         ).strip()
         self.audio_device_name = os.getenv("JARVIS_AUDIO_DEVICE_NAME", "").strip().lower()
         self.audio_device_index = self._parse_int_env("JARVIS_AUDIO_DEVICE_INDEX")
+        self.audio_device_rate = self._parse_int_env("JARVIS_AUDIO_DEVICE_RATE")
 
         self.wakeword_threshold = float(os.getenv("JARVIS_WAKEWORD_THRESHOLD", 0.55))
         self.wakeword_labels = self._parse_csv_env("JARVIS_WAKEWORD_LABELS", ["hey jarvis", "hey_jarvis"])
@@ -76,6 +78,7 @@ class JetsonWakeListener:
         self._audio = pyaudio.PyAudio()
         self._stream = None
         self._selected_device_index, self._selected_device_name = self._resolve_input_device()
+        self._device_sample_rate = self._resolve_device_sample_rate()
 
         if self.auto_download_models:
             openwakeword.utils.download_models()
@@ -86,6 +89,8 @@ class JetsonWakeListener:
 
         self._chunk_seconds = self.chunk_samples / self.sample_rate
         self._pre_roll_chunks = max(1, int(round(self.pre_roll_seconds / self._chunk_seconds)))
+        self._device_chunk_samples = max(1, int(round(self._device_sample_rate * self._chunk_seconds)))
+        self._resample_state = None
 
     @staticmethod
     def _parse_csv_env(name: str, default: list[str]) -> list[str]:
@@ -112,9 +117,18 @@ class JetsonWakeListener:
         print(f"[LISTENER] Wake labels: {', '.join(self.wakeword_labels)}")
         print(f"[LISTENER] Posting commands to {self.api_url}")
         if self._selected_device_name:
-            print(f"[LISTENER] Using audio input: index={self._selected_device_index} name={self._selected_device_name}")
+            print(
+                "[LISTENER] Using audio input: "
+                f"index={self._selected_device_index} "
+                f"name={self._selected_device_name} "
+                f"device_rate={self._device_sample_rate} "
+                f"wake_rate={self.sample_rate}"
+            )
         else:
-            print("[LISTENER] Using default system audio input")
+            print(
+                "[LISTENER] Using default system audio input "
+                f"device_rate={self._device_sample_rate} wake_rate={self.sample_rate}"
+            )
 
         pre_roll: deque[bytes] = deque(maxlen=self._pre_roll_chunks)
 
@@ -122,7 +136,7 @@ class JetsonWakeListener:
             while not self._stop_requested:
                 chunk = self._read_chunk()
                 pre_roll.append(chunk)
-                frame = np.frombuffer(chunk, dtype=np.int16)
+                frame = self._resample_for_wakeword(chunk)
 
                 score = self._wake_score(frame)
                 if score < self.wakeword_threshold:
@@ -191,7 +205,7 @@ class JetsonWakeListener:
 
     def _read_chunk(self) -> bytes:
         assert self._stream is not None
-        return self._stream.read(self.chunk_samples, exception_on_overflow=False)
+        return self._stream.read(self._device_chunk_samples, exception_on_overflow=False)
 
     def _wake_score(self, frame: np.ndarray) -> float:
         predictions = self._wake_model.predict(frame)
@@ -219,7 +233,7 @@ class JetsonWakeListener:
 
             chunk = self._read_chunk()
             recorded_chunks.append(chunk)
-            frame = np.frombuffer(chunk, dtype=np.int16)
+            frame = self._resample_for_wakeword(chunk)
             rms = self._rms(frame)
 
             if rms >= self.silence_rms:
@@ -244,7 +258,7 @@ class JetsonWakeListener:
         with wave.open(buffer, "wb") as wav_file:
             wav_file.setnchannels(self.channels)
             wav_file.setsampwidth(self._audio.get_sample_size(pyaudio.paInt16))
-            wav_file.setframerate(self.sample_rate)
+            wav_file.setframerate(self._device_sample_rate)
             wav_file.writeframes(b"".join(chunks))
         return buffer.getvalue()
 
@@ -280,6 +294,39 @@ class JetsonWakeListener:
             return 0.0
         samples = frame.astype(np.float32)
         return float(np.sqrt(np.mean(np.square(samples))))
+
+    def _resample_for_wakeword(self, chunk: bytes) -> np.ndarray:
+        if self._device_sample_rate == self.sample_rate:
+            return np.frombuffer(chunk, dtype=np.int16)
+
+        converted, self._resample_state = audioop.ratecv(
+            chunk,
+            2,
+            self.channels,
+            self._device_sample_rate,
+            self.sample_rate,
+            self._resample_state,
+        )
+        return np.frombuffer(converted, dtype=np.int16)
+
+    def _resolve_device_sample_rate(self) -> int:
+        if self.audio_device_rate is not None:
+            return self.audio_device_rate
+
+        if self._selected_device_index is not None:
+            try:
+                info = self._audio.get_device_info_by_index(self._selected_device_index)
+                rate = int(round(float(info.get("defaultSampleRate", self.sample_rate))))
+                return rate or self.sample_rate
+            except Exception:
+                return self.sample_rate
+
+        try:
+            info = self._audio.get_default_input_device_info()
+            rate = int(round(float(info.get("defaultSampleRate", self.sample_rate))))
+            return rate or self.sample_rate
+        except Exception:
+            return self.sample_rate
 
 
 def main() -> None:
