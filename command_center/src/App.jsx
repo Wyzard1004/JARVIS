@@ -15,7 +15,18 @@ function App() {
 
   // Initialize WebSocket connection to FastAPI backend
   useEffect(() => {
-    const wsUrl = import.meta.env.VITE_WEBSOCKET_URL || 'ws://localhost:8000/ws/swarm'
+    // Determine the WebSocket URL based on environment or current hostname
+    let wsUrl = import.meta.env.VITE_WEBSOCKET_URL
+    
+    if (!wsUrl) {
+      // For SSH port forwarding scenarios, use the same hostname as the frontend
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+      const hostname = window.location.hostname
+      const port = 8000 // Backend runs on 8000
+      wsUrl = `${protocol}//${hostname}:${port}/ws/swarm`
+    }
+    
+    console.log(`[App] Connecting to WebSocket at ${wsUrl}`)
     const ws = new WebSocket(wsUrl)
 
     ws.onopen = () => {
@@ -24,11 +35,15 @@ function App() {
     }
 
     ws.onmessage = (event) => {
-      const data = JSON.parse(event.data)
-      console.log('[App] Received:', data)
-      
-      if (data.event === 'gossip_update') {
-        setSwarmState(data)
+      try {
+        const data = JSON.parse(event.data)
+        console.log('[App] Received:', data)
+        
+        if (data.event === 'gossip_update') {
+          setSwarmState(data)
+        }
+      } catch (error) {
+        console.error('[App] Failed to parse WebSocket message:', error)
       }
     }
 
@@ -38,7 +53,19 @@ function App() {
     }
 
     ws.onerror = (error) => {
-      console.error('[App] WebSocket error:', error)
+      console.error('[App] WebSocket error:', {
+        type: error.type,
+        readyState: error.target?.readyState,
+        url: error.target?.url,
+        message: error.message || 'Unknown WebSocket error'
+      })
+      
+      // Provide helpful debugging info
+      if (error.target?.readyState === 3) {
+        console.error('[App] WebSocket connection refused. Is the backend running on port 8000?')
+        console.error('[App] Try starting the backend with: cd base_station && python -m uvicorn api.main:app --reload --host 0.0.0.0 --port 8000')
+      }
+      
       setConnectionStatus('error')
     }
 
