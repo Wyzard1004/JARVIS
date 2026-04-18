@@ -12,6 +12,7 @@ function StatusPanel({ connectionStatus, swarmState }) {
     disconnected: 'text-red-400',
     error: 'text-yellow-400'
   }
+  const totalNodes = swarmState?.nodes?.length || swarmState?.data?.nodes?.length || 0
 
   return (
     <div className="bg-gray-800 rounded border border-gray-700 p-4">
@@ -30,7 +31,7 @@ function StatusPanel({ connectionStatus, swarmState }) {
         {swarmState?.active_nodes && (
           <div>
             <p className="text-gray-400 text-sm">Active Nodes</p>
-            <p className="font-mono text-blue-400">{swarmState.active_nodes.length} / 3</p>
+            <p className="font-mono text-blue-400">{swarmState.active_nodes.length} / {totalNodes || '?'}</p>
           </div>
         )}
 

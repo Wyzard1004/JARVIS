@@ -39,20 +39,11 @@ function App() {
       let wsUrl = import.meta.env.VITE_WEBSOCKET_URL
       
       if (!wsUrl) {
-        // Try to use relative URL first (works better with SSH port forwarding behind proxy)
-        // In development, Vite proxy will handle /ws -> backend:8000
-        if (import.meta.env.DEV) {
-          const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-          wsUrl = `${protocol}//${window.location.host}/ws/swarm`
-          console.log(`[App] Using proxy path: ${wsUrl}`)
-        } else {
-          // In production, use explicit backend address
-          const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-          const hostname = window.location.hostname
-          const port = 8000 // Backend runs on 8000
-          wsUrl = `${protocol}//${hostname}:${port}/ws/swarm`
-          console.log(`[App] Using explicit port: ${wsUrl}`)
-        }
+        // For SSH port forwarding scenarios, use the same hostname as the frontend
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+        const hostname = window.location.hostname
+        const port = 8000 // Backend runs on 8000
+        wsUrl = `${protocol}//${hostname}:${port}/ws/swarm`
       }
       
       console.log(`[App] Connecting to WebSocket at ${wsUrl}`)

@@ -1,4 +1,10 @@
 {
   "python.envFile": "${workspaceFolder}/base_station/.env",
-  "python.terminal.useEnvFile": true
+  "python.terminal.useEnvFile": true,
+  "[json]": {
+    "editor.defaultFormatter": "vscode.json-language-features"
+  },
+  "[jsonc]": {
+    "editor.defaultFormatter": "vscode.json-language-features"
+  }
 }

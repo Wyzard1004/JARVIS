@@ -15,27 +15,33 @@ function SwarmGraph({ state }) {
   const simulationRef = useRef()
   const [propagationTimings, setPropagationTimings] = useState({})
   const [currentTime, setCurrentTime] = useState(0)
+  const propagationOrder = state?.data?.propagation_order || state?.propagation_order || []
+  const targetX = state?.target_x ?? state?.data?.target_x ?? 0
+  const targetY = state?.target_y ?? state?.data?.target_y ?? 0
+  const activeNodes = new Set(state?.active_nodes || state?.data?.active_nodes || [])
 
   // Handle propagation animation timing separately
   useEffect(() => {
-    if (!state?.data?.propagation_order) return
-
     // Build propagation timing map for pulse animation
-    const timings = {}
-    state.data.propagation_order.forEach(event => {
-      timings[event.node] = event.timestamp_ms
-    })
-    setPropagationTimings(timings)
-    
-    // Start animation timer
-    const startTime = Date.now()
-    const interval = setInterval(() => {
-      const elapsed = Date.now() - startTime
-      setCurrentTime(elapsed)
-    }, 50)
-    
-    return () => clearInterval(interval)
-  }, [state?.data?.propagation_order])
+    if (propagationOrder.length > 0) {
+      const timings = {}
+      propagationOrder.forEach(event => {
+        timings[event.node] = event.timestamp_ms
+      })
+      setPropagationTimings(timings)
+      
+      // Start animation timer
+      const startTime = Date.now()
+      const interval = setInterval(() => {
+        const elapsed = Date.now() - startTime
+        setCurrentTime(elapsed)
+      }, 50)
+      
+      return () => clearInterval(interval)
+    }
+    setPropagationTimings({})
+    setCurrentTime(0)
+  }, [propagationOrder])
 
   // Initialize and update the D3 visualization only when state changes
   useEffect(() => {
@@ -44,8 +50,11 @@ function SwarmGraph({ state }) {
     const nodes = (state?.nodes || []).map(node => ({
       id: node.id,
       status: node.status,
+      role: node.role,
       x: node.x,
-      y: node.y
+      y: node.y,
+      homeX: node.x,
+      homeY: node.y
     }))
 
     const links = (state?.edges || []).map(edge => ({
@@ -55,6 +64,8 @@ function SwarmGraph({ state }) {
 
     const width = 800
     const height = 384
+    const missionX = (width / 2) + targetX
+    const missionY = (height / 2) + targetY
 
     // Clear previous content
     d3.select(svgRef.current).selectAll('*').remove()
@@ -70,8 +81,26 @@ function SwarmGraph({ state }) {
       .force('link', d3.forceLink(links).id(d => d.id).distance(100))
       .force('charge', d3.forceManyBody().strength(-300))
       .force('center', d3.forceCenter(width / 2, height / 2))
-      .alphaDecay(0.03)  // Higher decay = settles faster
-      .velocityDecay(0.6)  // Higher = less bouncy
+      .force(
+        'mission-x',
+        d3.forceX(d => {
+          if (d.role === 'gateway') return d.homeX
+          return activeNodes.has(d.id) ? missionX : d.homeX
+        }).strength(d => {
+          if (d.role === 'gateway') return 0.22
+          return activeNodes.has(d.id) ? 0.35 : 0.1
+        })
+      )
+      .force(
+        'mission-y',
+        d3.forceY(d => {
+          if (d.role === 'gateway') return d.homeY
+          return activeNodes.has(d.id) ? missionY : d.homeY
+        }).strength(d => {
+          if (d.role === 'gateway') return 0.22
+          return activeNodes.has(d.id) ? 0.35 : 0.1
+        })
+      )
 
     simulationRef.current = simulation
 
@@ -102,6 +131,7 @@ function SwarmGraph({ state }) {
           }
         }
         
+        if (d.status === 'offline') return '#374151'
         return d.status === 'active' ? '#EF4444' : '#6B7280'
       })
       .call(drag(simulation))
