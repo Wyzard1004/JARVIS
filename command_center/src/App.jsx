@@ -47,22 +47,54 @@ function App() {
 
   const handleVoiceCommand = async (transcript) => {
     try {
-      const response = await fetch('http://localhost:8000/api/voice-command', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ transcribed_text: transcript })
-      })
+      let response
+      let historyCommand = typeof transcript === 'string' ? transcript : 'Processing audio...'
+
+      if (typeof transcript === 'string') {
+        response = await fetch('/api/voice-command', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ transcribed_text: transcript })
+        })
+      } else {
+        const formData = new FormData()
+        const extension = transcript.mimeType?.includes('ogg')
+          ? 'ogg'
+          : transcript.mimeType?.includes('wav')
+            ? 'wav'
+            : 'webm'
+
+        formData.append('audio', transcript.audioBlob, `recording.${extension}`)
+        response = await fetch('/api/transcribe-command', {
+          method: 'POST',
+          body: formData
+        })
+      }
       
       const result = await response.json()
+      const transcriptText = result.transcribed_text || historyCommand
+      historyCommand = transcriptText
+
+      if (!response.ok) {
+        throw new Error(result.detail || result.message || 'Voice command request failed')
+      }
+
       setCommandHistory(prev => [...prev, {
         timestamp: new Date().toISOString(),
-        command: transcript,
-        status: result.status
+        command: transcriptText,
+        status: result.status,
+        goal: result.parsed_command?.goal || 'UNKNOWN'
       }])
+
+      if (result.nodes?.length) {
+        setSwarmState(result)
+      }
       
       console.log('[App] Command sent:', result)
+      return result
     } catch (error) {
       console.error('[App] Error sending command:', error)
+      return { error: error.message }
     }
   }
 
@@ -109,6 +141,7 @@ function App() {
                 {commandHistory.map((cmd, i) => (
                   <div key={i} className="bg-gray-900 p-2 rounded text-sm border-l-2 border-yellow-500">
                     <p className="font-mono">{cmd.command}</p>
+                    <p className="text-xs text-blue-400">{cmd.goal}</p>
                     <p className="text-xs text-gray-400">{cmd.status}</p>
                   </div>
                 ))}

@@ -1,0 +1,9 @@
+INFO:     Started server process [16136]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+INFO:     127.0.0.1:55678 - "WebSocket /ws/swarm" [accepted]
+INFO:     connection open
+INFO:     connection closed
+INFO:     127.0.0.1:55679 - "WebSocket /ws/swarm" [accepted]
+INFO:     connection open
