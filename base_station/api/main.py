@@ -3,7 +3,7 @@ JARVIS Base Station - FastAPI Main Application
 Full-Stack Integration Hub (Section 4.0.0)
 
 This is the nervous system of JARVIS:
-- Integrates ai_bridge.py (Richard's LLM & Voice)
+- Integrates ai_bridge.py (optional language/audio adapter)
 - Integrates swarm_logic.py (Giulia's Gossip Protocol)
 - Publishes to MQTT for hardware (ESP32s)
 - Streams WebSocket updates to React UI
@@ -30,7 +30,7 @@ load_dotenv(BASE_STATION_DIR / ".env")
 
 app = FastAPI(
     title="JARVIS Base Station",
-    description="Voice-activated Swarm Coordinator for DDIL Environments",
+    description="Swarm coordination and consensus hub for DDIL environments",
     version="0.0.1",
 )
 

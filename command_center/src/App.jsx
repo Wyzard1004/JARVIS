@@ -191,7 +191,7 @@ function App() {
     <div className="app min-h-screen bg-gray-900 text-white">
       <header className="bg-black border-b border-red-500 p-4">
         <h1 className="text-3xl font-bold">⚡ JARVIS Command Center</h1>
-        <p className="text-gray-400">Voice-Activated Swarm Coordinator</p>
+        <p className="text-gray-400">Consensus-Driven Swarm Coordination</p>
       </header>
 
       <main className="flex gap-4 p-4">
@@ -214,9 +214,9 @@ function App() {
           {/* Status Indicator */}
           <StatusPanel connectionStatus={connectionStatus} swarmState={swarmState} />
 
-          {/* Push-to-Talk Button */}
+          {/* Optional voice input */}
           <div className="bg-gray-800 rounded border border-gray-700 p-4 mt-4">
-            <h3 className="text-lg font-bold mb-4">Voice Command</h3>
+            <h3 className="text-lg font-bold mb-4">Optional Voice Input</h3>
             <PushToTalkButton onCommand={handleVoiceCommand} />
           </div>
 

@@ -2,216 +2,144 @@
 
 ## What This Repo Actually Is
 
-This repository is a planning scaffold for `JARVIS` (Joint Adaptive Resilient Voice Integrated Swarm), a hackathon project aimed at:
+This repository is no longer just a planning scaffold. It now contains a runnable swarm-simulation stack for `JARVIS` (Joint Adaptive Relay for Variable Interoperable Swarms), centered on:
 
 - swarm coordination in contested or disconnected environments
-- local edge inference on a Jetson Orin
-- a live demo that combines voice commands, backend orchestration, visualization, and ESP32 hardware
+- adaptive gossip vs. TCP/Raft-style consensus comparison
+- a React command center with live topology updates
+- optional language/audio tooling on top of the command path
+- an eventual hardware demo path through MQTT and ESP32 relays
 
-The strongest part of this handoff is the written architecture and work split.
-The weakest part is implementation coverage: almost every code file in the repo is currently empty.
+The strongest part of the repo today is the swarm runtime and the backend/frontend integration around it.
+The biggest remaining gaps are hardware wiring, UI rebalancing, and keeping the docs aligned with the code.
 
-## What You Were Handed
+## Current Implementation Snapshot
 
-The useful handoff materials are:
+As of April 18, 2026, the important files look like this:
 
-- `development_gameplan.md`
-  - the original team execution plan with ownership by person
-- `overview.md`
-  - the project pitch, system architecture, and expected API/data contracts
-- `repository_structure.md`
-  - intended monorepo layout and folder ownership guidance
-- `.gitignore`
-  - basic ignore rules are already present
-
-The current implementation state is:
-
-- `base_station/api/main.py`: empty
-- `base_station/core/ai_bridge.py`: empty
-- `base_station/core/swarm_logic.py`: empty
-- `base_station/core/mqtt_client.py`: empty
-- `base_station/requirements.txt`: empty
-- `command_center/package.json`: empty
-- `command_center/tailwind.config.js`: empty
-- `command_center/vite.config.js`: empty
-- `hardware/gateway_node/gateway_node.ino`: empty
-- `hardware/field_node/field_node.ino`: empty
-- `simulations/tcp_vs_gossip.py`: empty
-- `README.md`: empty
-- `docs/mission_canvas.md`: empty
-
-## Bottom-Line Assessment
-
-This is not a working codebase yet.
-It is a project brief plus a folder layout.
-
-That is still valuable because it gives you:
-
-- the intended architecture
-- the hackathon story
-- team role boundaries
-- the target interfaces between modules
-- a clear place for your workstream
+- `base_station/api/main.py`
+  - working FastAPI app
+  - health endpoint, swarm-state endpoint, WebSocket updates
+  - command dispatch wired to `swarm_logic.py`
+  - legacy `POST /api/voice-command` route already accepts direct structured payloads
+- `base_station/core/swarm_logic.py`
+  - implemented adaptive gossip runtime
+  - implemented TCP/Raft-style baseline
+  - benchmark data, disruption modeling, mission state, delivery summaries
+- `base_station/core/ai_bridge.py`
+  - implemented rule-based parsing
+  - optional Ollama-backed parsing
+  - speech-to-text and text-to-speech helper functions
+  - safe fallback behavior
+- `base_station/core/mqtt_client.py`
+  - implemented MQTT client utilities
+  - not yet wired into the live FastAPI dispatch loop
+- `command_center/src/`
+  - working command center UI
+  - graph, status panel, command history, WebSocket connection
+  - push-to-talk still present, though the project story should now be consensus-first
 
 ## Richard's Assigned Lane
 
-According to `development_gameplan.md`, Richard owns the AI pipeline bridge in:
+Richard's lane is still `base_station/core/ai_bridge.py`, but the framing should be updated:
 
-- `base_station/core/ai_bridge.py`
+your job is to maintain the **operator intent adapter**, not to make voice the center of the system.
 
-Your responsibility is to turn raw text or speech-derived text into a safe command object and a spoken confirmation.
+That means:
 
-The intended flow is:
+1. Normalize operator language into a safe command object.
+2. Support direct alignment with the shared swarm-command schema.
+3. Use Ollama when available, but never make the system depend on it.
+4. Keep audio optional and non-blocking.
+5. Preserve graceful fallback behavior.
 
-1. Receive transcribed text.
-2. Send it to local Ollama on the Jetson.
-3. Force the model to return strict JSON.
-4. Validate and normalize the JSON.
-5. Return a predictable command payload.
-6. Generate a spoken confirmation.
+## Current Command Contract
 
-Expected output shape from the docs:
+The swarm path already works best when everything converges on a predictable payload like:
 
 ```json
 {
-  "intent": "swarm_redeploy",
+  "intent": "swarm_command",
   "target_location": "Grid Alpha",
-  "action_code": "RED_ALERT",
-  "confidence": 0.95
+  "action_code": "SEARCH",
+  "consensus_algorithm": "gossip",
+  "origin": "soldier-1"
 }
 ```
 
-## Recommended Game Plan
+Your module should help produce and support that shape, but the backend can also receive it directly without the AI path.
 
-### Phase 1: Make the Repo Real
+## Recommended Priorities for Richard
 
-Before building AI logic, create the minimum runnable foundation:
+### Phase 1: Protect the Schema
 
-1. Fill in `base_station/requirements.txt`.
-2. Expand `base_station/.env` with the variables the code will actually need.
-3. Put a minimal FastAPI app in `base_station/api/main.py`.
-4. Add a useful root `README.md` with setup and demo steps.
+Treat the shared swarm intent schema as the primary contract.
 
-Goal:
-make the repository installable and understandable before adding intelligence.
+Goals:
 
-### Phase 2: Build Richard's Module First
+1. Keep location normalization stable.
+2. Keep goal-to-action mapping predictable.
+3. Keep confidence and fallback behavior consistent.
+4. Make sure direct commands and AI-parsed commands land in the same downstream format.
 
-Implement `base_station/core/ai_bridge.py` as a standalone, testable module with one public function:
+### Phase 2: Keep the AI Path Optional
 
-```python
-process_voice_command(transcribed_text: str) -> dict
-```
+The current system already supports direct structured payloads. That is good and should stay true.
 
-Inside that module, separate the responsibilities:
+Goals:
 
-- `parse_intent_with_ollama(text)`
-- `validate_command_payload(payload)`
-- `synthesize_confirmation(text)`
-- `process_voice_command(text)`
+1. If Ollama is unavailable, the command path still works.
+2. If audio is unavailable, the command path still works.
+3. If parsing fails, the system returns a safe fallback instead of crashing.
 
-Goal:
-let your module be tested before the web app, hardware, or UI are finished.
+### Phase 3: Improve Reliability Before Polish
 
-### Phase 3: Use Safe Fallbacks for Demo Reliability
+Hackathon demos fail when polish depends on fragile infrastructure.
 
-Hackathon demos fail when external pieces are not ready.
-Build fallback behavior from day one:
+Goals:
 
-- If Ollama is down, return a mock but valid command payload.
-- If the model returns invalid JSON, retry once and then fall back.
-- If ElevenLabs is unavailable, return text only and log that audio was skipped.
+1. Test parser output on a small set of real command phrases.
+2. Make sure `NO_OP` is returned for unclear or unsafe requests.
+3. Keep the command path deterministic enough for live demos.
+4. Only polish TTS after the command contract is stable.
 
-Goal:
-the system should degrade gracefully instead of crashing on stage.
+## Suggested Build Order from Richard's Perspective
 
-### Phase 4: Lock the Contract Between Teams
+If Richard continues work from the current repo state, the best order is:
 
-Before the rest of the team builds around your module, freeze these interfaces:
+1. stabilize the command schema
+2. strengthen AI fallback behavior
+3. align `ai_bridge.py` output with direct payload expectations
+4. add more tests/examples for operator phrasing
+5. only then improve STT/TTS polish
 
-- input to `process_voice_command`
-- output JSON schema
-- error response shape
-- confirmation text format
+## Practical First Tasks
 
-Goal:
-William can wire the API, Giulia can consume the command intent, and nobody has to guess.
+These are the highest-leverage next tasks in Richard's lane:
 
-### Phase 5: Add a Demo Mode
+1. Make sure `process_voice_command()` and direct payloads produce the same downstream intent shape.
+2. Add or refine sample phrases for move, search, attack, avoid, hold, and abort behaviors.
+3. Keep confidence and fallback behavior easy to reason about during the demo.
+4. Avoid introducing any dependency that would block the swarm runtime when audio or LLM services are down.
 
-Create an environment-driven mock mode so the project can run even without:
+## Risks to Watch
 
-- Jetson hardware
-- local Ollama
-- ElevenLabs credentials
-- ESP32 devices
+These are the real risks in the current repo:
 
-Goal:
-you can still demo the full flow on a laptop using simulated outputs.
-
-## Suggested Build Order for the Whole Project
-
-If you want the fastest path from planning to something demoable, build in this order:
-
-1. `base_station/requirements.txt`
-2. `base_station/core/ai_bridge.py`
-3. `base_station/api/main.py`
-4. `base_station/core/swarm_logic.py` with mocked graph output first
-5. `base_station/core/mqtt_client.py` with stub publish behavior first
-6. `command_center/` basic Vite app
-7. `simulations/tcp_vs_gossip.py`
-8. ESP32 firmware last
-
-Reason:
-the backend contracts unlock almost everything else, while hardware can stay simulated until later.
-
-## Practical First Tasks for Richard
-
-These are the highest-leverage next tasks for you personally:
-
-1. Define the command schema in plain English and Python terms.
-2. Implement the Ollama request and response parsing.
-3. Add strict JSON validation and fallback behavior.
-4. Create a small local test script with sample phrases like:
-   - `"Swarm, push to Grid Alpha"`
-   - `"Send units to sector 4"`
-   - `"Abort the current route"`
-5. Return a consistent command object every time.
-6. Only after that, wire in ElevenLabs.
-
-## Risks in the Current Handoff
-
-These are the main risks hidden inside the current repo:
-
-- The architecture is documented, but no subsystem is implemented yet.
-- The frontend is described, but there is no `src/` application code.
-- The backend structure exists, but all Python files are placeholders.
-- The hardware firmware files exist, but contain no logic.
-- There are no tests, no pinned dependencies, and no setup instructions.
-- The docs assume a multi-person team, but the current state requires a solo bootstrap mindset.
+- the route name `/api/voice-command` still suggests voice-first behavior even though direct commands already work
+- the UI is still framed around push-to-talk more than structured swarm control
+- MQTT exists as a module but is not yet in the live dispatch path
+- some historical docs still described the repo as emptier or more voice-centric than it is
 
 ## Best Next Step
 
-If you continue from this handoff, the best immediate move is:
+If you want the most leverage from Richard's lane, the best immediate move is:
 
-build `ai_bridge.py` plus a tiny FastAPI health/test endpoint first.
+keep `ai_bridge.py` reliable, optional, and schema-first while the rest of the project continues to center on swarm consensus.
 
-That gives you:
+That preserves the strong part of the current repo:
 
-- a real starting point
-- an artifact tied directly to your assigned lane
-- something the rest of the system can integrate with
-- a clean foundation for future automation
-
-## Automation-Friendly Follow-Up
-
-Once planning is done, this repo is well suited for automation because the next tasks are separable and repeatable:
-
-- bootstrap dependencies
-- implement `ai_bridge.py`
-- add mock/demo mode
-- scaffold FastAPI routes
-- create README/setup docs
-- add simple tests for command parsing
-
-That means you can later automate progress in small, low-risk chunks instead of trying to automate the whole project at once.
+- consensus and visualization stay primary
+- the AI path remains useful
+- the system degrades gracefully
+- teammates can build around a stable contract

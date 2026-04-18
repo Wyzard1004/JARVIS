@@ -2,6 +2,8 @@
 // Uses the onboard BOOT button (GPIO0 on most ESP32 dev boards).
 // The RESET/EN button is not usable for app logic.
 
+#include <Arduino.h>
+
 #ifndef PTT_BUTTON_PIN
 #define PTT_BUTTON_PIN 0
 #endif
