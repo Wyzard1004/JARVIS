@@ -44,6 +44,29 @@ app.add_middleware(
 )
 
 # ============================================================
+# STARTUP & SHUTDOWN EVENTS
+# ============================================================
+
+@app.on_event("startup")
+async def startup_event():
+    """Log when the server starts"""
+    print("[STARTUP] JARVIS Base Station initializing...")
+    print("[STARTUP] FastAPI running on 0.0.0.0:8000")
+    print("[STARTUP] WebSocket endpoint ready at ws://localhost:8000/ws/swarm")
+    try:
+        swarm = get_swarm()
+        print(f"[STARTUP] Swarm topology initialized: {len(swarm.graph.nodes)} nodes")
+        print("[STARTUP] All systems nominal. Awaiting commands.")
+    except Exception as e:
+        print(f"[ERROR] Failed to initialize swarm logic: {e}")
+        raise
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Log when the server shuts down"""
+    print("[SHUTDOWN] JARVIS Base Station shutting down")
+
+# ============================================================
 # STATE MANAGEMENT
 # ============================================================
 
@@ -104,16 +127,34 @@ async def websocket_swarm_endpoint(websocket: WebSocket):
     - Node positions and colors
     - Command confirmations
     """
-    await manager.connect(websocket)
+    print(f"[WebSocket] Client connecting from {websocket.client}")
     try:
+        await manager.connect(websocket)
+        print(f"[WebSocket] Client connected successfully")
+        
+        # Send welcome message to confirm connection
+        await websocket.send_json({
+            "event": "connected",
+            "message": "Connected to JARVIS Base Station",
+            "timestamp": datetime.now().isoformat()
+        })
+        
+        # Handle incoming messages
         while True:
             data = await websocket.receive_text()
-            # Parse incoming commands from React
-            print(f"[WebSocket] Received: {data}")
+            try:
+                message = json.loads(data)
+                print(f"[WebSocket] Received: {message}")
+            except json.JSONDecodeError:
+                print(f"[WebSocket] Invalid JSON: {data}")
             
-    except WebSocketDisconnect:
+    except Exception as e:
+        print(f"[WebSocket ERROR] {type(e).__name__}: {e}")
         manager.disconnect(websocket)
-        print("Client disconnected from swarm WebSocket")
+    
+    finally:
+        print(f"[WebSocket] Client disconnected")
+        manager.disconnect(websocket)
 
 
 # ============================================================
@@ -197,28 +238,6 @@ async def get_swarm_state():
     }
 
 
-# ============================================================
-# STARTUP & SHUTDOWN
-# ============================================================
-
-@app.on_event("startup")
-async def startup_event():
-    """Initialize connections when the server starts"""
-    print("[STARTUP] JARVIS Base Station initializing...")
-    swarm = get_swarm()
-    print(f"[STARTUP] Swarm topology initialized: {len(swarm.graph.nodes)} nodes")
-    # TODO: Initialize MQTT client
-    # TODO: Initialize AI Bridge
-    # TODO: Connect to Ollama
-    print("[STARTUP] All systems nominal. Awaiting commands.")
-
-
-@app.on_event("shutdown")
-async def shutdown_event():
-    """Clean up connections on server shutdown"""
-    print("[SHUTDOWN] JARVIS Base Station closing...")
-    # TODO: Close MQTT connections
-    # TODO: Clean up WebSocket connections
 
 
 # ============================================================
