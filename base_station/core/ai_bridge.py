@@ -34,6 +34,7 @@ DEFAULT_LOCATIONS = [
 ]
 
 SCHEMA_VERSION = "1.0"
+ELEVENLABS_STT_MODEL = "scribe_v2"
 
 
 def _parse_csv_env(name: str, default: list[str]) -> list[str]:
@@ -180,7 +181,17 @@ def parse_with_rules(text: str) -> dict[str, Any] | None:
             }
         )
 
-    if any(term in lowered for term in ["avoid", "do not enter", "don't enter", "steer clear"]):
+    if any(
+        term in lowered
+        for term in [
+            "avoid",
+            "do not enter",
+            "don't enter",
+            "steer clear",
+            "keep away from",
+            "stay away from",
+        ]
+    ):
         if not location:
             return None
         return validate_command(
@@ -202,7 +213,7 @@ def parse_with_rules(text: str) -> dict[str, Any] | None:
             }
         )
 
-    if any(term in lowered for term in ["scan", "search", "recon"]):
+    if any(term in lowered for term in ["scan", "search", "recon", "take a look at", "check out", "inspect"]):
         if not location:
             return None
         return validate_command(
@@ -213,7 +224,20 @@ def parse_with_rules(text: str) -> dict[str, Any] | None:
             }
         )
 
-    if any(term in lowered for term in ["move", "go to", "push", "reroute", "redeploy"]):
+    if any(
+        term in lowered
+        for term in [
+            "move",
+            "go to",
+            "push",
+            "reroute",
+            "redeploy",
+            "send",
+            "head to",
+            "put the team on",
+            "put the swarm on",
+        ]
+    ):
         if not location:
             return None
         return validate_command(
@@ -300,6 +324,48 @@ def process_voice_command(transcribed_text: str) -> dict[str, Any]:
             return ollama_result
 
     return build_safe_fallback()
+
+
+def transcribe_audio_with_elevenlabs(
+    audio_bytes: bytes,
+    filename: str = "recording.webm",
+    content_type: str = "audio/webm",
+    timeout: int = 60,
+) -> dict[str, Any]:
+    api_key = os.getenv("ELEVENLABS_API_KEY", "").strip()
+    if not api_key:
+        raise ValueError("Missing ElevenLabs credentials. Set ELEVENLABS_API_KEY.")
+
+    response = requests.post(
+        "https://api.elevenlabs.io/v1/speech-to-text",
+        headers={"xi-api-key": api_key},
+        data={"model_id": ELEVENLABS_STT_MODEL},
+        files={"file": (filename, audio_bytes, content_type)},
+        timeout=timeout,
+    )
+    response.raise_for_status()
+    return response.json()
+
+
+def process_audio_command(
+    audio_bytes: bytes,
+    filename: str = "recording.webm",
+    content_type: str = "audio/webm",
+) -> dict[str, Any]:
+    transcript_result = transcribe_audio_with_elevenlabs(
+        audio_bytes=audio_bytes,
+        filename=filename,
+        content_type=content_type,
+    )
+    transcribed_text = str(transcript_result.get("text") or "").strip()
+    parsed_command = process_voice_command(transcribed_text)
+
+    return {
+        "transcribed_text": transcribed_text,
+        "parsed_command": parsed_command,
+        "confirmation_text": create_confirmation_text(parsed_command),
+        "transcript_result": transcript_result,
+    }
 
 
 def create_confirmation_text(command: dict[str, Any]) -> str:

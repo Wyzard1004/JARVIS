@@ -1,0 +1,14 @@
+[STARTUP] JARVIS Base Station initializing...
+[STARTUP] Swarm topology initialized: 3 nodes
+[STARTUP] All systems nominal. Awaiting commands.
+INFO:     127.0.0.1:51061 - "GET /health HTTP/1.1" 200 OK
+Client disconnected from swarm WebSocket
+INFO:     127.0.0.1:55691 - "POST /api/transcribe-command HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55705 - "POST /api/transcribe-command HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49337 - "POST /api/transcribe-command HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56224 - "POST /api/transcribe-command HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56233 - "POST /api/transcribe-command HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56250 - "POST /api/transcribe-command HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56257 - "POST /api/transcribe-command HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56274 - "POST /api/transcribe-command HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56288 - "POST /api/transcribe-command HTTP/1.1" 200 OK

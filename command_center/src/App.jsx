@@ -15,7 +15,18 @@ function App() {
 
   // Initialize WebSocket connection to FastAPI backend
   useEffect(() => {
-    const wsUrl = import.meta.env.VITE_WEBSOCKET_URL || 'ws://localhost:8000/ws/swarm'
+    // Determine the WebSocket URL based on environment or current hostname
+    let wsUrl = import.meta.env.VITE_WEBSOCKET_URL
+
+    if (!wsUrl) {
+      // For SSH port forwarding scenarios, use the same hostname as the frontend
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+      const hostname = window.location.hostname
+      const port = 8000 // Backend runs on 8000
+      wsUrl = `${protocol}//${hostname}:${port}/ws/swarm`
+    }
+
+    console.log(`[App] Connecting to WebSocket at ${wsUrl}`)
     const ws = new WebSocket(wsUrl)
 
     ws.onopen = () => {
@@ -24,11 +35,15 @@ function App() {
     }
 
     ws.onmessage = (event) => {
-      const data = JSON.parse(event.data)
-      console.log('[App] Received:', data)
-      
-      if (data.event === 'gossip_update' || data.event === 'swarm_state') {
-        setSwarmState(data)
+      try {
+        const data = JSON.parse(event.data)
+        console.log('[App] Received:', data)
+
+        if (data.event === 'gossip_update' || data.event === 'swarm_state') {
+          setSwarmState(data)
+        }
+      } catch (error) {
+        console.error('[App] Failed to parse WebSocket message:', error)
       }
     }
 
@@ -38,7 +53,19 @@ function App() {
     }
 
     ws.onerror = (error) => {
-      console.error('[App] WebSocket error:', error)
+      console.error('[App] WebSocket error:', {
+        type: error.type,
+        readyState: error.target?.readyState,
+        url: error.target?.url,
+        message: error.message || 'Unknown WebSocket error'
+      })
+
+      // Provide helpful debugging info
+      if (error.target?.readyState === 3) {
+        console.error('[App] WebSocket connection refused. Is the backend running on port 8000?')
+        console.error('[App] Try starting the backend with: cd base_station && python -m uvicorn api.main:app --reload --host 0.0.0.0 --port 8000')
+      }
+
       setConnectionStatus('error')
     }
 
@@ -47,22 +74,54 @@ function App() {
 
   const handleVoiceCommand = async (transcript) => {
     try {
-      const response = await fetch('http://localhost:8000/api/voice-command', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ transcribed_text: transcript })
-      })
+      let response
+      let historyCommand = typeof transcript === 'string' ? transcript : 'Processing audio...'
+
+      if (typeof transcript === 'string') {
+        response = await fetch('/api/voice-command', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ transcribed_text: transcript })
+        })
+      } else {
+        const formData = new FormData()
+        const extension = transcript.mimeType?.includes('ogg')
+          ? 'ogg'
+          : transcript.mimeType?.includes('wav')
+            ? 'wav'
+            : 'webm'
+
+        formData.append('audio', transcript.audioBlob, `recording.${extension}`)
+        response = await fetch('/api/transcribe-command', {
+          method: 'POST',
+          body: formData
+        })
+      }
       
       const result = await response.json()
+      const transcriptText = result.transcribed_text || historyCommand
+      historyCommand = transcriptText
+
+      if (!response.ok) {
+        throw new Error(result.detail || result.message || 'Voice command request failed')
+      }
+
       setCommandHistory(prev => [...prev, {
         timestamp: new Date().toISOString(),
-        command: transcript,
-        status: result.status
+        command: transcriptText,
+        status: result.status,
+        goal: result.parsed_command?.goal || 'UNKNOWN'
       }])
+
+      if (result.nodes?.length) {
+        setSwarmState(result)
+      }
       
       console.log('[App] Command sent:', result)
+      return result
     } catch (error) {
       console.error('[App] Error sending command:', error)
+      return { error: error.message }
     }
   }
 
@@ -109,6 +168,7 @@ function App() {
                 {commandHistory.map((cmd, i) => (
                   <div key={i} className="bg-gray-900 p-2 rounded text-sm border-l-2 border-yellow-500">
                     <p className="font-mono">{cmd.command}</p>
+                    <p className="text-xs text-blue-400">{cmd.goal}</p>
                     <p className="text-xs text-gray-400">{cmd.status}</p>
                   </div>
                 ))}

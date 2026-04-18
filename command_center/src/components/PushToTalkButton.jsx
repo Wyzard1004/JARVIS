@@ -21,8 +21,10 @@ function PushToTalkButton({ onCommand }) {
       mediaRecorder.current = new MediaRecorder(stream)
       audioChunks.current = []
 
-      mediaRecorder.current.onstabledatachange = (event) => {
-        audioChunks.current.push(event.data)
+      mediaRecorder.current.ondataavailable = (event) => {
+        if (event.data && event.data.size > 0) {
+          audioChunks.current.push(event.data)
+        }
       }
 
       mediaRecorder.current.start()
@@ -39,24 +41,25 @@ function PushToTalkButton({ onCommand }) {
     
     if (!mediaRecorder.current) return
 
-    mediaRecorder.current.addEventListener('stop', async () => {
-      const audioBlob = new Blob(audioChunks.current, { type: 'audio/wav' })
-      
-      // TODO: Send audioBlob to backend for Whisper transcription
-      // const formData = new FormData()
-      // formData.append('audio', audioBlob)
-      // const transcribed = await fetch('/api/transcribe', { method: 'POST', body: formData })
-      
-      // For now, use a mock transcript
-      const mockTranscript = 'JARVIS, re-route swarm to Grid Alpha'
-      setTranscript(mockTranscript)
-      
-      // Send command to backend
-      onCommand(mockTranscript)
-    })
+    const recorder = mediaRecorder.current
+    recorder.onstop = async () => {
+      const mimeType = recorder.mimeType || 'audio/webm'
+      const audioBlob = new Blob(audioChunks.current, { type: mimeType })
 
-    mediaRecorder.current.stop()
-    mediaRecorder.current.stream.getTracks().forEach(track => track.stop())
+      setTranscript('Processing audio...')
+      const result = await onCommand({ audioBlob, mimeType })
+
+      if (result?.transcribed_text) {
+        setTranscript(result.transcribed_text)
+      } else if (result?.error) {
+        setTranscript(`Error: ${result.error}`)
+      } else {
+        setTranscript('No transcript received')
+      }
+    }
+
+    recorder.stop()
+    recorder.stream.getTracks().forEach(track => track.stop())
   }
 
   return (
