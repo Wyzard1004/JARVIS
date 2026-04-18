@@ -28,9 +28,20 @@ DEFAULT_GOALS = [
 ]
 
 DEFAULT_LOCATIONS = [
+    # Coarse-grained sectors
     "GRID_ALPHA",
     "GRID_BRAVO",
     "GRID_CHARLIE",
+    # Fine-grained numbered sectors (Alpha 1-3, Bravo 1-3, Charlie 1-3)
+    "GRID_ALPHA_1",
+    "GRID_ALPHA_2",
+    "GRID_ALPHA_3",
+    "GRID_BRAVO_1",
+    "GRID_BRAVO_2",
+    "GRID_BRAVO_3",
+    "GRID_CHARLIE_1",
+    "GRID_CHARLIE_2",
+    "GRID_CHARLIE_3",
 ]
 
 SCHEMA_VERSION = "1.0"
@@ -91,23 +102,71 @@ def _goal_requires_avoid(goal: str) -> bool:
 
 
 def _location_aliases() -> dict[str, str]:
+    """Build comprehensive location aliases including number word variants."""
     aliases: dict[str, str] = {}
+    
+    # Map digits to their word forms
+    digit_to_word = {
+        "1": "one",
+        "2": "two",
+        "3": "three"
+    }
+    
     for canonical in ALLOWED_LOCATIONS:
+        # Standard aliases
         human = canonical.lower().replace("_", " ")
         aliases[human] = canonical
         aliases[canonical.lower()] = canonical
-
-        compact = human.replace(" grid ", " ").replace(" sector ", " ")
+        
+        # Compact versions (remove "grid " and "sector " prefixes)
+        compact = human
+        if compact.startswith("grid "):
+            compact = compact[5:]  # Remove "grid " prefix
+        if compact.startswith("sector "):
+            compact = compact[7:]  # Remove "sector " prefix
+        
         aliases[compact] = canonical
+        
+        # Add variants with dashes and underscores
+        compact_dash = compact.replace(" ", "-")
+        compact_underscore = compact.replace(" ", "_")
+        aliases[compact_dash] = canonical
+        aliases[compact_underscore] = canonical
+        
+        # For numbered locations, add digit↔word variants
+        # E.g., "bravo 2" ↔ "bravo two"
+        has_digit = any(digit in compact for digit in "123")
+        
+        if has_digit:
+            # Replace digits with words: "bravo 2" → "bravo two"
+            for digit, word in digit_to_word.items():
+                if digit in compact:
+                    variant_word = compact.replace(digit, word)
+                    aliases[variant_word] = canonical
+                    # Also with separators
+                    aliases[variant_word.replace(" ", "-")] = canonical
+                    aliases[variant_word.replace(" ", "_")] = canonical
+    
     return aliases
 
 
 def _find_location_in_text(text: str) -> str | None:
+    """Find location in text, preferring longer/more specific matches."""
     lowered = text.lower()
+    
+    # Find ALL matching aliases and return the longest one
+    # (prefer "bravo 2" over "bravo")
+    best_match = None
+    best_length = 0
+    
     for alias, canonical in LOCATION_ALIASES.items():
         if alias and alias in lowered:
-            return canonical
-    return None
+            # Prefer longer aliases to avoid partial matches
+            if len(alias) > best_length:
+                best_match = canonical
+                best_length = len(alias)
+    
+    return best_match
 
 
 def build_safe_fallback() -> dict[str, Any]:
@@ -232,6 +291,7 @@ def parse_with_rules(text: str) -> dict[str, Any] | None:
             "push",
             "reroute",
             "redeploy",
+            "deploy",
             "send",
             "head to",
             "put the team on",

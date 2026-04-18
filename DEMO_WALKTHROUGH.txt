@@ -1,0 +1,289 @@
+================================================================================
+                    JARVIS SOLDIER CONTROLLER DEMO
+                          Complete Walkthrough
+================================================================================
+
+SCENARIO: A soldier requests reconnaissance of a target area, enemy forces are
+detected, and the soldier authorizes a strike based on the intelligence report.
+
+================================================================================
+STEP 1: SOLDIER REQUESTS RECONNAISSANCE
+================================================================================
+
+Command: Soldier → Operator → Recon
+
+POST /api/soldier/soldier-1/request-recon
+{
+  "area_label": "Grid Alpha",
+  "target_x": 150,
+  "target_y": -50,
+  "priority": "HIGH"
+}
+
+Response:
+{
+  "command_id": "soldier-1-recon-0",
+  "route": "soldier→operator→recon",
+  "status": "pending_operator_approval",
+  "area_label": "Grid Alpha",
+  "message": "Soldier soldier-1 requested reconnaissance of Grid Alpha"
+}
+
+✓ Recon command created and awaiting operator approval
+
+================================================================================
+STEP 2: OPERATOR APPROVES AND RELAYS
+================================================================================
+
+POST /api/soldier/soldier-1/approve-command/soldier-1-recon-0
+
+Response:
+{
+  "approved": true,
+  "command_id": "soldier-1-recon-0",
+  "mission_id": "mission-xxxxx",
+  "route": "soldier→operator→recon",
+  "message": "Command soldier-1-recon-0 approved and relayed"
+}
+
+✓ Operator approves the recon request
+✓ Command relayed to recon drone (recon-1)
+✓ Mission ID assigned for tracking
+
+================================================================================
+STEP 3: RECON DRONE SCANS AREA AND DETECTS ENEMIES
+================================================================================
+
+Recon drone performs surveillance of Grid Alpha
+Coverage: 90%
+Enemies Detected: 3
+
+Enemy-1: Vehicle (High Threat)  @ (200, 0)
+Enemy-2: Personnel (High Threat) @ (100, -50)
+Enemy-3: Equipment (Medium)      @ (180, 30)
+
+================================================================================
+STEP 4: RECON REPORTS FINDINGS BACK
+================================================================================
+
+Command: Recon → Operator → Soldier
+
+POST /api/soldier/soldier-1/process-recon-report
+{
+  "mission_id": "mission-xxxxx",
+  "enemies_detected": [
+    {"id": "enemy-1", "type": "vehicle", "threat_level": "high", "x": 200, "y": 0},
+    {"id": "enemy-2", "type": "personnel", "threat_level": "high", "x": 100, "y": -50},
+    {"id": "enemy-3", "type": "equipment", "threat_level": "medium", "x": 180, "y": 30}
+  ],
+  "coverage_percent": 90,
+  "threat_level": "high"
+}
+
+Response:
+{
+  "report_id": "recon-report-0",
+  "enemies_detected": 3,
+  "threat_level": "high",
+  "coverage_percent": 90,
+  "status": "awaiting_authorization",
+  "message": "Recon report received by soldier-1: 3 enemies detected"
+}
+
+✓ Intelligence report received
+✓ 3 enemy targets identified
+✓ High threat level confirmed
+✓ Awaiting soldier authorization for strike
+
+================================================================================
+STEP 5: SOLDIER REVIEWS THREAT AND AUTHORIZES STRIKE
+================================================================================
+
+Soldier reviews intelligence:
+- High-threat targets identified
+- 90% coverage confirms findings
+- Multiple targets require engagement
+
+POST /api/soldier/soldier-1/authorize-strike/recon-report-0
+{
+  "priority": "CRITICAL"
+}
+
+Response:
+{
+  "command_id": "soldier-1-authorized-strike-xxx",
+  "route": "recon→operator→attack",
+  "mission_id": "mission-strike-xxxxx",
+  "status": "authorized",
+  "enemies_to_engage": 3,
+  "message": "Strike authorized by soldier-1 based on recon findings"
+}
+
+✓ Strike authorized with CRITICAL priority
+✓ New mission created for the strike
+✓ Attack drones (attack-1, attack-2) assigned
+✓ 3 targets queued for engagement
+
+================================================================================
+STEP 6: ATTACK DRONES ENGAGE TARGETS
+================================================================================
+
+Attack Sequence:
+  Attack-1: Engages Enemy-1 (Vehicle) - 2 impacts
+  Attack-2: Engages Enemy-2 (Personnel) - 1 impact
+  Attack-1: Secondary: Engages Enemy-3 (Equipment) - 1 impact
+
+Total Ordnance: 4 impacts expended
+Targets Engaged: 3
+
+================================================================================
+STEP 7: RECON CONFIRMS DESTRUCTION (BDA)
+================================================================================
+
+Recon drone conducts post-strike Battle Damage Assessment
+
+Damage Assessment Results:
+  Targets Engaged: 3
+  Targets Destroyed: 3
+  Targets Damaged: 0
+  Targets Escaped: 0
+
+Mission Success Rate: 100%
+
+================================================================================
+STEP 8: SOLDIER RECEIVES BDA REPORT
+================================================================================
+
+POST /api/soldier/soldier-1/process-bda
+{
+  "mission_id": "mission-strike-xxxxx",
+  "damage_assessment": {
+    "targets_engaged": 3,
+    "destroyed": 3,
+    "damaged": 0,
+    "escaped": 0
+  }
+}
+
+Response:
+{
+  "bda_id": "bda-0",
+  "mission_id": "mission-strike-xxxxx",
+  "damage_assessment": {
+    "targets_engaged": 3,
+    "destroyed": 3,
+    "damaged": 0,
+    "escaped": 0
+  },
+  "status": "complete",
+  "message": "BDA processed by soldier-1: 3 targets destroyed"
+}
+
+✓ BDA report received
+✓ All targets confirmed destroyed
+✓ Mission status: COMPLETE
+✓ Combat operations concluded
+
+================================================================================
+STEP 9: FINAL STATUS CHECK
+================================================================================
+
+GET /api/soldier/soldier-1/status
+
+Response:
+{
+  "soldier_id": "soldier-1",
+  "status": "ready",
+  "total_commands": 2,
+  "active_missions": 2,
+  "recon_reports": 1,
+  "authorized_targets": 1,
+  "commands": [
+    {
+      "id": "soldier-1-recon-0",
+      "type": "reconnaissance",
+      "route": "soldier→operator→recon",
+      "status": "authorized",
+      "priority": "HIGH",
+      "created_at": "2026-04-18T14:35:58"
+    },
+    {
+      "id": "soldier-1-authorized-strike-xxx",
+      "type": "attack",
+      "route": "recon→operator→attack",
+      "status": "authorized",
+      "priority": "CRITICAL",
+      "created_at": "2026-04-18T14:35:59"
+    }
+  ],
+  "recent_recon_reports": [
+    {
+      "id": "recon-report-0",
+      "enemies_detected": 3,
+      "threat_level": "high",
+      "assessment_time": "2026-04-18T14:35:59"
+    }
+  ]
+}
+
+✓ Soldier status: READY
+✓ 2 commands executed successfully
+✓ 2 active missions tracked
+✓ 1 intelligence report processed
+✓ All operations logged for audit trail
+
+================================================================================
+COMMAND ROUTING SUMMARY
+================================================================================
+
+Pipeline Used: Recon → Operator → Attack
+
+Complete routing chain:
+  1. Soldier-1 requested recon of Grid Alpha
+  2. Operator-1 approved the request
+  3. Recon-1 drone conducted surveillance
+  4. 3 enemy targets identified
+  5. Intelligence reported back to Soldier-1
+  6. Soldier-1 authorized strike (CRITICAL priority)
+  7. Operator relayed to Attack drones
+  8. Attack-1 & Attack-2 engaged all targets
+  9. Recon-1 conducted post-strike BDA
+  10. All targets confirmed destroyed
+  11. Report returned to Soldier-1
+  12. Mission status: COMPLETE
+
+Total Reaction Time: ~150-160ms
+Success Rate: 100% (3/3 targets destroyed)
+
+================================================================================
+AVAILABLE PIPELINES DEMONSTRATED
+================================================================================
+
+✓ Pipeline 1: Soldier → Operator → Recon      (USED IN THIS DEMO)
+✓ Pipeline 2: Soldier → Operator → Attack     (Available)
+✓ Pipeline 3: Recon → Operator → Attack       (USED IN THIS DEMO)
+✓ Pipeline 4: Soldier → Attack (Direct)       (Available)
+✓ Pipeline 5: Soldier → Recon (Direct)        (Available)
+
+All pipelines are independently testable and can be combined for complex
+multi-phase tactical operations.
+
+================================================================================
+TO RUN THIS DEMO LIVE
+================================================================================
+
+1. Start the API server:
+   cd /home/william/JARVIS/base_station
+   python3 -m uvicorn api.main:app --reload --host 0.0.0.0 --port 8000
+
+2. Run the comprehensive test suite:
+   bash /home/william/JARVIS/test_soldier_controller.sh
+
+3. Or run individual curl commands from this walkthrough
+
+For complete documentation, see:
+  - SOLDIER_CONTROLLER_GUIDE.md (full API reference)
+  - SOLDIER_DEMO_QUICKSTART.md (quick start guide)
+  - test_soldier_controller.sh (runnable test suite)
+
+================================================================================
