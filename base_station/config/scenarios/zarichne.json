@@ -3,8 +3,8 @@
   "timestamp_ms": 0,
   "coordinate_space_size": 1000,
   "map_overlay": {
-    "asset_url": "/scenario-assets/overlay-7008682f140c41b0aa30346b2846d0da.png",
-    "asset_path": "scenario_assets/overlay-7008682f140c41b0aa30346b2846d0da.png",
+    "asset_url": "/scenario-assets/overlay-ff8c3d0fc70343f4a06f329bb638848c.png",
+    "asset_path": "scenario_assets/overlay-ff8c3d0fc70343f4a06f329bb638848c.png",
     "opacity": 0.72,
     "visible": true
   },

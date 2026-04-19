@@ -16,6 +16,8 @@ function StatusPanel({ connectionStatus, swarmState }) {
   const activeScenario = swarmState?.scenario_info?.name
   const networkProfile = swarmState?.network_profile || {}
   const pendingExecute = swarmState?.pending_execute
+  const missionStatus = swarmState?.search_state?.mission_status
+  const missionObjective = swarmState?.search_state?.objective
 
   return (
     <div className="bg-gray-800 rounded border border-gray-700 p-4">
@@ -43,6 +45,16 @@ function StatusPanel({ connectionStatus, swarmState }) {
           <div>
             <p className="text-gray-400 text-sm">Status</p>
             <p className="font-mono text-purple-400">{swarmState.status}</p>
+          </div>
+        )}
+
+        {missionStatus && missionStatus !== 'idle' && (
+          <div>
+            <p className="text-gray-400 text-sm">Mission</p>
+            <p className="font-mono text-amber-300">{missionStatus}</p>
+            {missionObjective && (
+              <p className="mt-1 text-xs text-gray-400">{missionObjective}</p>
+            )}
           </div>
         )}
 

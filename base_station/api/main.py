@@ -615,6 +615,7 @@ def _build_lean_ui_event(consensus_result: Dict, transcribed_text: str, parsed_c
     """Build a lean response for WebSocket broadcast to React UI (minimal payload)."""
     active_nodes = _build_active_nodes(consensus_result)
     context = _operator_context_snapshot()
+    search_state = consensus_result.get("search_state", {})
     
     # Extract only essential node/edge info for visualization
     nodes = consensus_result.get("nodes", [])
@@ -673,6 +674,11 @@ def _build_lean_ui_event(consensus_result: Dict, transcribed_text: str, parsed_c
         "active_nodes": active_nodes,
         "propagation_order": lean_prop,
         "total_propagation_ms": consensus_result.get("total_propagation_ms", 0),
+        "delivery_summary": consensus_result.get("delivery_summary", {}),
+        "search_state": search_state,
+        "target_tasks": search_state.get("target_tasks", []),
+        "engagements": search_state.get("engagements", []),
+        "object_reports": consensus_result.get("object_reports", []),
         "confirmation_text": confirmation_text,
         "enemies": consensus_result.get("enemies", []),
         "attack_queue": sim_data.get("attack_queue", []),
@@ -729,6 +735,7 @@ def _build_swarm_event(consensus_result: Dict, transcribed_text: str, parsed_com
 
 def _build_state_snapshot_message(state: Dict, event_name: str = "state_update") -> Dict:
     context = _operator_context_snapshot(state)
+    search_state = state.get("search_state", {})
     return {
         "event": event_name,
         "status": state.get("status", "idle"),
@@ -743,11 +750,25 @@ def _build_state_snapshot_message(state: Dict, event_name: str = "state_update")
         "drone_behaviors": state.get("drone_behaviors", {}),
         "active_gossip_messages": state.get("active_gossip_messages", []),
         "active_nodes": _build_active_nodes(state),
+        "target_location": state.get("target_location"),
+        "target_x": state.get("target_x", 0),
+        "target_y": state.get("target_y", 0),
+        "delivery_summary": state.get("delivery_summary", {}),
+        "search_state": search_state,
+        "target_tasks": search_state.get("target_tasks", []),
+        "engagements": search_state.get("engagements", []),
+        "object_reports": state.get("object_reports", []),
+        "benchmark": state.get("benchmark", {}),
+        "network_profile": state.get("network_profile", {}),
         "map_overlay": state.get("map_overlay", {}),
         "enemies": state.get("enemies", []),
         "structures": state.get("structures", []),
         "special_entities": state.get("special_entities", []),
         "events": state.get("events", []),
+        "pending_execute": {
+            "present": bool(pending_execute_commands),
+            "count": len(pending_execute_commands),
+        },
         "operator_context": context,
         "timestamp": datetime.now().isoformat(),
     }

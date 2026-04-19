@@ -72,6 +72,17 @@ const DEFAULT_OPERATOR_CONTEXT = {
   updated_at: null
 }
 
+const DEFAULT_SEARCH_STATE = {
+  control_node: null,
+  mission_status: 'idle',
+  objective: null,
+  target_location: null,
+  action_code: null,
+  origin: null,
+  target_tasks: [],
+  engagements: []
+}
+
 const EDITOR_TOOL_OPTIONS = [
   { id: 'select', label: 'Select', description: 'Select and move placed objects' },
   { id: 'building', label: 'Building', description: 'Drag rectangle footprints' },
@@ -210,13 +221,27 @@ const normalizeSwarmState = (state) => {
         ? state.operator_context.available_operators
         : DEFAULT_OPERATOR_CONTEXT.available_operators
     },
+    search_state: {
+      ...DEFAULT_SEARCH_STATE,
+      ...(state.search_state || {}),
+      target_tasks: Array.isArray(state.search_state?.target_tasks)
+        ? state.search_state.target_tasks
+        : DEFAULT_SEARCH_STATE.target_tasks,
+      engagements: Array.isArray(state.search_state?.engagements)
+        ? state.search_state.engagements
+        : DEFAULT_SEARCH_STATE.engagements
+    },
     map_overlay: mapOverlay,
     enemies: Array.isArray(state.enemies) ? state.enemies : [],
     structures: Array.isArray(state.structures) ? state.structures : [],
     special_entities: Array.isArray(state.special_entities) ? state.special_entities : [],
     nodes: Array.isArray(state.nodes) ? state.nodes : [],
     edges: Array.isArray(state.edges) ? state.edges : [],
-    events: Array.isArray(state.events) ? state.events : []
+    events: Array.isArray(state.events) ? state.events : [],
+    object_reports: Array.isArray(state.object_reports) ? state.object_reports : [],
+    pending_execute: typeof state.pending_execute === 'object' && state.pending_execute !== null
+      ? state.pending_execute
+      : { present: false }
   }
 }
 
@@ -470,7 +495,7 @@ function App() {
               timestamp: new Date().toLocaleTimeString(),
               origin: data.origin || data.operator_context?.active_operator || activeSoldier,
               target: data.target_location || 'Unknown',
-              status: data.status || 'processing',
+              status: data.search_state?.mission_status || data.status || 'processing',
               nodes: data.active_nodes?.length || data.nodes?.length || 0,
               totalTime: `${(data.total_propagation_ms || 0).toFixed(0)}ms`,
               message: data.confirmation_text || data.message || '',
@@ -609,7 +634,7 @@ function App() {
         timestamp: new Date().toISOString(),
         origin: result.origin || activeSoldier,
         command: transcriptText,
-        status: result.status,
+        status: result.search_state?.mission_status || result.status,
         goal: result.parsed_command?.goal || 'UNKNOWN',
         executionState: result.parsed_command?.execution_state || 'NONE'
       }])
@@ -628,7 +653,7 @@ function App() {
           timestamp: new Date().toLocaleTimeString(),
           origin: result.origin || activeSoldier,
           target: result.target_location || 'Unknown',
-          status: result.status || 'processing',
+          status: result.search_state?.mission_status || result.status || 'processing',
           nodes: result.active_nodes?.length || result.nodes?.length || 0,
           totalTime: `${(result.total_propagation_ms || 0).toFixed(0)}ms`,
           message: result.confirmation_text || result.message || '',

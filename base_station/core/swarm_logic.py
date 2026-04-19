@@ -11,6 +11,7 @@ from __future__ import annotations
 import heapq
 import itertools
 import json
+import math
 import time
 import os
 from copy import deepcopy
@@ -776,6 +777,275 @@ class SwarmCoordinator:
             return "raft"
         return "gossip"
 
+    def _current_position(self, node_id: str) -> Tuple[float, float]:
+        return tuple(self._drone_positions.get(node_id, (self.space.SPACE_SIZE / 2.0, self.space.SPACE_SIZE / 2.0)))
+
+    def _node_ids_by_type(self, node_type: str, candidates: Optional[Iterable[str]] = None) -> List[str]:
+        node_ids = list(candidates) if candidates is not None else list(self._drone_positions.keys())
+        matches: List[str] = []
+        for node_id in node_ids:
+            node = self._node_lookup.get(node_id, {})
+            resolved_type = str(node.get("type") or self._infer_node_type(node_id, node.get("role"))).lower()
+            if resolved_type == node_type:
+                matches.append(node_id)
+        return matches
+
+    def _formation_points(
+        self,
+        center: Tuple[float, float],
+        count: int,
+        radius: float,
+        angle_offset: float = -(math.pi / 2.0),
+    ) -> List[Tuple[float, float]]:
+        center = self.space.clamp_position(*center)
+        if count <= 0:
+            return []
+        if count == 1:
+            return [center]
+
+        points: List[Tuple[float, float]] = []
+        for index in range(count):
+            angle = angle_offset + ((2.0 * math.pi) * index / count)
+            points.append(
+                self.space.clamp_position(
+                    center[0] + (math.cos(angle) * radius),
+                    center[1] + (math.sin(angle) * radius),
+                )
+            )
+        return points
+
+    def _transit_waypoints(self, node_id: str, destination: Tuple[float, float]) -> List[Tuple[float, float]]:
+        current = self._current_position(node_id)
+        destination = self.space.clamp_position(*destination)
+        return [current, destination]
+
+    def _patrol_waypoints(self, node_id: str, center: Tuple[float, float], radius: float = 85.0) -> List[Tuple[float, float]]:
+        current = self._current_position(node_id)
+        loop = self._formation_points(center, 4, radius)
+        if not loop:
+            return [current]
+        return [current, *loop, loop[0]]
+
+    def _retreat_destination(
+        self,
+        node_id: str,
+        hazard_position: Tuple[float, float],
+        anchor_position: Tuple[float, float],
+        distance: float = 180.0,
+    ) -> Tuple[float, float]:
+        current = self._current_position(node_id)
+        dx = current[0] - hazard_position[0]
+        dy = current[1] - hazard_position[1]
+        length = math.hypot(dx, dy)
+
+        if length <= 1e-6:
+            dx = current[0] - anchor_position[0]
+            dy = current[1] - anchor_position[1]
+            length = math.hypot(dx, dy)
+
+        if length <= 1e-6:
+            dx, dy, length = 1.0, 0.0, 1.0
+
+        return self.space.clamp_position(
+            current[0] + ((dx / length) * distance),
+            current[1] + ((dy / length) * distance),
+        )
+
+    def _enemy_reports_near_target(self, target_position: Tuple[float, float], radius: float = 220.0) -> List[Dict]:
+        reports: List[Dict] = []
+        for enemy in self._enemies:
+            position = self._normalize_position(enemy.get("position"))
+            distance = self.space.distance(position, target_position)
+            if distance > radius:
+                continue
+
+            reports.append(
+                {
+                    "id": enemy.get("id"),
+                    "label": enemy.get("label") or enemy.get("id"),
+                    "type": enemy.get("subtype") or enemy.get("type") or "unknown",
+                    "status": enemy.get("status", "active"),
+                    "location": self.space.display_sector_label(position),
+                    "distance_to_target": round(distance, 1),
+                }
+            )
+        return reports
+
+    def _apply_command_effects(
+        self,
+        swarm_intent: Dict,
+        active_nodes: List[str],
+        target_position: Tuple[float, float],
+        control_node: str,
+    ) -> Tuple[str, Dict, List[Dict]]:
+        action_code = str(swarm_intent.get("action_code") or "NO_OP").upper()
+        target_location = swarm_intent.get("target_location")
+        origin = self._resolve_origin_node(swarm_intent.get("origin") or swarm_intent.get("operator_node"))
+        timestamp_ms = int(datetime.now().timestamp() * 1000)
+        control_position = self._current_position(control_node)
+        active_set = list(dict.fromkeys(active_nodes or [origin]))
+
+        soldiers = self._node_ids_by_type("soldier", active_set)
+        compute_nodes = self._node_ids_by_type("compute", active_set)
+        recon_nodes = self._node_ids_by_type("recon", active_set)
+        attack_nodes = self._node_ids_by_type("attack", active_set)
+        mobile_nodes = [node_id for node_id in [*compute_nodes, *recon_nodes, *attack_nodes] if node_id in active_set]
+
+        target_tasks: List[Dict] = []
+        engagements: List[Dict] = []
+        object_reports = self._enemy_reports_near_target(target_position)
+
+        def assign_behavior(node_id: str, behavior: str, waypoints: Optional[List[Tuple[float, float]]], task_label: str) -> None:
+            previous_behavior = self._drone_behaviors.get(node_id, {}).get("current", "lurk")
+            self.set_drone_behavior(node_id, behavior, waypoints)
+
+            grid_position = self._current_position(node_id)
+            if previous_behavior != behavior:
+                if previous_behavior == "patrol" and behavior != "patrol":
+                    self.event_bus.patrol_ended(timestamp_ms, node_id, grid_position, reason=f"retasked:{action_code.lower()}")
+                self.event_bus.drone_behavior_changed(timestamp_ms, node_id, grid_position, behavior, previous_behavior)
+
+            if behavior == "patrol" and waypoints:
+                self.event_bus.patrol_started(timestamp_ms, node_id, grid_position, [tuple(point) for point in waypoints])
+
+            self.event_bus.command_executed(
+                timestamp_ms,
+                node_id,
+                grid_position,
+                f"{action_code}:{target_location or self.space.display_sector_label(target_position)}",
+                True,
+            )
+
+            task_destination = waypoints[-1] if waypoints else self._current_position(node_id)
+            target_tasks.append(
+                {
+                    "drone_id": node_id,
+                    "behavior": behavior,
+                    "task": task_label,
+                    "target_location": target_location,
+                    "target_position": [round(task_destination[0], 2), round(task_destination[1], 2)],
+                    "waypoint_count": len(waypoints or []),
+                }
+            )
+
+        def hold_node(node_id: str, task_label: str) -> None:
+            assign_behavior(node_id, "lurk", [self._current_position(node_id)], task_label)
+
+        mission_status = "executing"
+        objective = f"{action_code.replace('_', ' ').title()} {target_location}".strip()
+
+        if action_code == "SEARCH":
+            mission_status = "searching"
+            objective = f"Search {target_location or self.space.display_sector_label(target_position)}"
+
+            for recon_id in recon_nodes:
+                assign_behavior(recon_id, "patrol", self._patrol_waypoints(recon_id, target_position, radius=110.0), "area_search")
+            for attack_id, destination in zip(attack_nodes, self._formation_points(target_position, len(attack_nodes), 130.0)):
+                assign_behavior(attack_id, "transit", self._transit_waypoints(attack_id, destination), "attack_staging")
+            for compute_id in compute_nodes:
+                assign_behavior(compute_id, "transit", self._transit_waypoints(compute_id, control_position), "relay_support")
+            for soldier_id in soldiers:
+                hold_node(soldier_id, "operator_overwatch")
+
+        elif action_code in {"ENGAGE_TARGET", "EXECUTE"}:
+            mission_status = "engaging"
+            objective = f"Engage target at {target_location or self.space.display_sector_label(target_position)}"
+
+            for attack_id, destination in zip(attack_nodes, self._formation_points(target_position, len(attack_nodes), 55.0)):
+                assign_behavior(attack_id, "transit", self._transit_waypoints(attack_id, destination), "target_engagement")
+                engagements.append(
+                    {
+                        "drone_id": attack_id,
+                        "status": "committed",
+                        "target_location": target_location,
+                        "target_position": [round(destination[0], 2), round(destination[1], 2)],
+                    }
+                )
+            for recon_id in recon_nodes:
+                assign_behavior(recon_id, "patrol", self._patrol_waypoints(recon_id, target_position, radius=140.0), "battle_damage_assessment")
+            for compute_id, destination in zip(compute_nodes, self._formation_points(target_position, len(compute_nodes), 180.0)):
+                assign_behavior(compute_id, "transit", self._transit_waypoints(compute_id, destination), "target_processing")
+            for soldier_id in soldiers:
+                hold_node(soldier_id, "operator_control")
+
+        elif action_code == "MOVE_TO":
+            mission_status = "maneuvering"
+            objective = f"Move swarm to {target_location or self.space.display_sector_label(target_position)}"
+
+            formation = self._formation_points(target_position, len(mobile_nodes), 95.0)
+            for node_id, destination in zip(mobile_nodes, formation):
+                assign_behavior(node_id, "transit", self._transit_waypoints(node_id, destination), "maneuver")
+            for soldier_id in soldiers:
+                hold_node(soldier_id, "operator_control")
+
+        elif action_code == "SYNC":
+            mission_status = "synchronizing"
+            sync_center = target_position if target_location else control_position
+            objective = f"Synchronize at {target_location or self.space.display_sector_label(sync_center)}"
+
+            formation = self._formation_points(sync_center, len(mobile_nodes), 105.0)
+            for node_id, destination in zip(mobile_nodes, formation):
+                assign_behavior(node_id, "transit", self._transit_waypoints(node_id, destination), "sync_formation")
+            for soldier_id in soldiers:
+                hold_node(soldier_id, "operator_control")
+
+        elif action_code == "AVOID_AREA":
+            mission_status = "avoiding"
+            objective = f"Avoid {target_location or self.space.display_sector_label(target_position)}"
+
+            for node_id in mobile_nodes:
+                retreat = self._retreat_destination(node_id, target_position, control_position)
+                assign_behavior(node_id, "transit", self._transit_waypoints(node_id, retreat), "hazard_avoidance")
+            for soldier_id in soldiers:
+                hold_node(soldier_id, "operator_control")
+
+        elif action_code in {"HOLD_POSITION", "ABORT", "DISREGARD", "RED_ALERT"}:
+            mission_status = {
+                "HOLD_POSITION": "holding",
+                "ABORT": "aborted",
+                "DISREGARD": "disregarded",
+                "RED_ALERT": "alert",
+            }[action_code]
+            objective = f"{action_code.replace('_', ' ').title()} command acknowledged"
+
+            for node_id in active_set:
+                hold_node(node_id, "hold_position")
+
+        else:
+            mission_status = "executing"
+            objective = f"{action_code.replace('_', ' ').title()} in progress"
+
+            formation = self._formation_points(target_position, len(mobile_nodes), 120.0)
+            for node_id, destination in zip(mobile_nodes, formation):
+                assign_behavior(node_id, "transit", self._transit_waypoints(node_id, destination), "command_execution")
+            for soldier_id in soldiers:
+                hold_node(soldier_id, "operator_control")
+
+        if object_reports and recon_nodes:
+            scout_id = recon_nodes[0]
+            scout_position = self._current_position(scout_id)
+            for report in object_reports:
+                self.event_bus.target_discovered(
+                    timestamp_ms,
+                    scout_id,
+                    scout_position,
+                    report.get("id") or "unknown-target",
+                    report.get("type") or "unknown",
+                    0.88,
+                )
+
+        mission_state = {
+            "control_node": control_node,
+            "mission_status": mission_status,
+            "objective": objective,
+            "target_location": target_location,
+            "action_code": action_code,
+            "origin": origin,
+            "target_tasks": target_tasks,
+            "engagements": engagements,
+        }
+        return mission_status, mission_state, object_reports
+
     def _leader_node(self) -> str:
         for node_id in self._drone_positions:
             if node_id.startswith("compute"):
@@ -907,18 +1177,24 @@ class SwarmCoordinator:
         target_location: str | None,
         target_position: Tuple[float, float],
         control_node: str,
+        status: str = "propagating",
+        search_state: Optional[Dict] = None,
+        object_reports: Optional[List[Dict]] = None,
     ) -> Dict:
         active_set = set(active_nodes)
         transmission_graph = self.calculate_transmission_graph()
-        nodes = [self._node_record(node_id, status="active") for node_id in active_nodes]
-        edges = [
-            edge
-            for edge in transmission_graph
-            if edge["source"] in active_set and edge["target"] in active_set
+        nodes = [
+            self._node_record(node_id, status="active" if node_id in active_set else "ready")
+            for node_id in self._drone_positions
         ]
+        edges = transmission_graph
         benchmark = self.benchmark_gossip_vs_tcp()
+        mission_state = {
+            "control_node": control_node,
+            **(search_state or {}),
+        }
         result = {
-            "status": "propagating",
+            "status": status,
             "algorithm": algorithm,
             "origin": origin,
             "active_nodes": active_nodes,
@@ -929,13 +1205,13 @@ class SwarmCoordinator:
             "target_location": target_location,
             "target_x": round(target_position[0], 2),
             "target_y": round(target_position[1], 2),
-            "search_state": {"control_node": control_node},
+            "search_state": mission_state,
             "protocol": {"type": algorithm},
             "delivery_summary": {
                 "delivered": len(active_nodes),
-                "total": len(active_nodes),
+                "total": len(self._drone_positions),
             },
-            "object_reports": [],
+            "object_reports": list(object_reports or []),
             "benchmark": benchmark,
             "available_algorithms": self.get_supported_algorithms(),
             "scenario_info": self.get_active_scenario_info(),
@@ -955,6 +1231,12 @@ class SwarmCoordinator:
         target_position = self.space.location_to_point(target_location)
         active_nodes = self._gossip_component(origin)
         propagation_order, total = self._gossip_propagation(origin, active_nodes)
+        mission_status, mission_state, object_reports = self._apply_command_effects(
+            swarm_intent,
+            active_nodes,
+            target_position,
+            origin,
+        )
         return self._result_payload(
             algorithm="gossip",
             origin=origin,
@@ -964,6 +1246,9 @@ class SwarmCoordinator:
             target_location=target_location,
             target_position=target_position,
             control_node=origin,
+            status=mission_status,
+            search_state=mission_state,
+            object_reports=object_reports,
         )
 
     def _calculate_raft_path_modern(self, swarm_intent: Dict) -> Dict:
@@ -971,6 +1256,12 @@ class SwarmCoordinator:
         target_location = swarm_intent.get("target_location")
         target_position = self.space.location_to_point(target_location)
         leader, active_nodes, propagation_order, total = self._raft_path(origin)
+        mission_status, mission_state, object_reports = self._apply_command_effects(
+            swarm_intent,
+            active_nodes,
+            target_position,
+            leader,
+        )
         return self._result_payload(
             algorithm="raft",
             origin=origin,
@@ -980,6 +1271,9 @@ class SwarmCoordinator:
             target_location=target_location,
             target_position=target_position,
             control_node=leader,
+            status=mission_status,
+            search_state=mission_state,
+            object_reports=object_reports,
         )
     def benchmark_gossip_vs_tcp(self) -> Dict:
         edge_count = len(self.calculate_transmission_graph())
