@@ -396,6 +396,8 @@ def _build_lean_ui_event(consensus_result: Dict, transcribed_text: str, parsed_c
         "signal_animations": signal_animations,
         "structures": consensus_result.get("structures", []),
         "events": consensus_result.get("events", []),
+        "transcribed_text": transcribed_text,
+        "parsed_command": parsed_command,
         "timestamp": datetime.now().isoformat(),
     }
 
