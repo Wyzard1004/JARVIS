@@ -431,6 +431,7 @@ const buildCurrentCommandState = (payload, fallbackOrigin = 'unknown') => {
     pendingExecute: Boolean(payload.pending_execute?.present),
     callsign: payload.parsed_command?.callsign || 'JARVIS',
     goal: payload.parsed_command?.goal || payload.action_code || 'UNKNOWN',
+    executionState: payload.parsed_command?.execution_state || payload.execution_state || 'NONE',
     inputSource,
     inputSourceLabel: inputSourceMeta.label,
     inputSourceSummary: inputSourceMeta.summary,
@@ -452,6 +453,85 @@ const getCurrentCommandDirective = (payload) => {
 }
 
 const shouldApplyPayloadState = (payload) => payload?.event !== 'report_review'
+
+const formatMissionStatus = (status) => String(status || 'processing').replace(/_/g, ' ')
+
+const RECON_GOALS = new Set(['SCAN_AREA', 'REVIEW_REPORTS', 'MARK'])
+const MOVEMENT_GOALS = new Set(['MOVE_TO', 'LOITER', 'HOLD_POSITION', 'STANDBY', 'AVOID_AREA'])
+const STRIKE_GOALS = new Set(['ATTACK_AREA', 'EXECUTE', 'ABORT', 'DISREGARD'])
+
+const getCurrentCommandTone = (command) => {
+  const goal = String(command?.goal || 'UNKNOWN').toUpperCase()
+  const executionState = String(command?.executionState || 'NONE').toUpperCase()
+
+  if (command?.pendingExecute || executionState === 'PENDING_EXECUTE') {
+    return {
+      missionLabel: 'Execute Confirmation Required',
+      missionSummary: 'Operator approval is still required before this task can be actioned.',
+      bannerClass: 'border-amber-400 bg-gradient-to-r from-amber-950/95 via-orange-950/95 to-stone-950/95',
+      titleClass: 'text-amber-100',
+      missionBadgeClass: 'border-amber-300/60 bg-amber-400/15 text-amber-100',
+      statusBadgeClass: 'border-amber-200/60 bg-amber-300/15 text-amber-50',
+      statCardClass: 'border-amber-100/10 bg-black/25',
+      messageClass: 'border-amber-300/20 bg-amber-300/10 text-amber-50/90',
+      detailClass: 'text-amber-50/75'
+    }
+  }
+
+  if (RECON_GOALS.has(goal)) {
+    return {
+      missionLabel: 'Recon Task',
+      missionSummary: 'Immediate reconnaissance or marking task with no execute gate required.',
+      bannerClass: 'border-cyan-400 bg-gradient-to-r from-slate-950/95 via-cyan-950/95 to-teal-950/95',
+      titleClass: 'text-cyan-50',
+      missionBadgeClass: 'border-cyan-300/60 bg-cyan-400/15 text-cyan-50',
+      statusBadgeClass: 'border-teal-200/50 bg-teal-300/15 text-teal-50',
+      statCardClass: 'border-cyan-100/10 bg-black/25',
+      messageClass: 'border-cyan-300/20 bg-cyan-300/10 text-cyan-50/90',
+      detailClass: 'text-cyan-50/75'
+    }
+  }
+
+  if (MOVEMENT_GOALS.has(goal)) {
+    return {
+      missionLabel: 'Mobility Task',
+      missionSummary: 'Immediate positioning or hold instruction for the active network.',
+      bannerClass: 'border-sky-400 bg-gradient-to-r from-slate-950/95 via-sky-950/95 to-indigo-950/95',
+      titleClass: 'text-sky-50',
+      missionBadgeClass: 'border-sky-300/60 bg-sky-400/15 text-sky-50',
+      statusBadgeClass: 'border-indigo-200/50 bg-indigo-300/15 text-indigo-50',
+      statCardClass: 'border-sky-100/10 bg-black/25',
+      messageClass: 'border-sky-300/20 bg-sky-300/10 text-sky-50/90',
+      detailClass: 'text-sky-50/75'
+    }
+  }
+
+  if (STRIKE_GOALS.has(goal)) {
+    return {
+      missionLabel: 'Strike Task',
+      missionSummary: 'Mission payload is destructive or conflict-critical and should remain highly visible.',
+      bannerClass: 'border-rose-500 bg-gradient-to-r from-rose-950/95 via-red-950/95 to-slate-950/95',
+      titleClass: 'text-rose-50',
+      missionBadgeClass: 'border-rose-300/60 bg-rose-400/15 text-rose-50',
+      statusBadgeClass: 'border-red-200/50 bg-red-300/15 text-red-50',
+      statCardClass: 'border-rose-100/10 bg-black/25',
+      messageClass: 'border-rose-300/20 bg-rose-300/10 text-rose-50/90',
+      detailClass: 'text-rose-50/75'
+    }
+  }
+
+  return {
+    missionLabel: 'Mission Update',
+    missionSummary: 'Latest command received from the operator pipeline.',
+    bannerClass: 'border-slate-500 bg-gradient-to-r from-slate-950/95 via-gray-950/95 to-slate-900/95',
+    titleClass: 'text-white',
+    missionBadgeClass: 'border-slate-300/40 bg-slate-400/10 text-slate-100',
+    statusBadgeClass: 'border-slate-200/40 bg-slate-300/10 text-slate-50',
+    statCardClass: 'border-white/10 bg-black/25',
+    messageClass: 'border-white/10 bg-white/5 text-gray-100',
+    detailClass: 'text-gray-200/75'
+  }
+}
 
 const normalizeSuggestedCommands = (commands) => {
   const values = typeof commands === 'string'
@@ -1232,6 +1312,19 @@ function App() {
     : `${simulationSlowdownFactor}x slower`
   const activeScenarioInfo = swarmState?.scenario_info || null
   const currentSuggestedCommands = normalizeSuggestedCommands(suggestedCommandsText)
+  const currentCommandTone = currentCommand ? getCurrentCommandTone(currentCommand) : null
+  const currentCommandStatusLabel = currentCommand ? formatMissionStatus(currentCommand.status) : ''
+  const currentCommandOriginLabel = currentCommand
+    ? sanitizeUnitIdentifiers(currentCommand.origin || 'unknown')
+    : 'unknown'
+  const currentCommandStats = currentCommand
+    ? [
+        { label: 'Origin', value: currentCommandOriginLabel },
+        { label: 'Status', value: currentCommandStatusLabel },
+        { label: 'Active Nodes', value: `${currentCommand.nodes}` },
+        { label: 'Propagation', value: currentCommand.totalTime }
+      ]
+    : []
   const saveButtonLabel = activeScenarioInfo?.relative_path === 'swarm_initial_state.json'
     ? 'Save New Scenario'
     : 'Save Scenario'
@@ -1253,36 +1346,44 @@ function App() {
       </header>
 
       {currentCommand && (
-        <div className={`sticky top-0 z-30 border-b-4 shadow-xl backdrop-blur ${
-          currentCommand.pendingExecute
-            ? 'border-yellow-500 bg-gradient-to-r from-yellow-950/95 to-orange-900/95'
-            : 'border-red-500 bg-gradient-to-r from-yellow-900/95 to-red-900/95'
-        }`}>
-          <div className={`px-4 md:px-6 ${missionBannerCollapsed ? 'py-3' : 'py-5'}`}>
-            <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className={`sticky top-0 z-30 border-b-4 shadow-xl backdrop-blur ${currentCommandTone.bannerClass}`}>
+          <div className={`px-4 md:px-6 ${missionBannerCollapsed ? 'py-3' : 'py-4'}`}>
+            <div className="flex flex-wrap items-start justify-between gap-4">
               <div className="min-w-0">
-                <p className="mb-2 text-xs uppercase tracking-widest text-gray-300">📡 Active Mission</p>
-                <div className="flex flex-wrap items-center gap-3">
-                  <h2 className={`min-w-0 truncate font-bold text-yellow-300 ${missionBannerCollapsed ? 'text-2xl' : 'text-4xl'}`}>
-                    {currentCommand.target || 'UNKNOWN'}
-                  </h2>
+                <div className="mb-2 flex flex-wrap items-center gap-2">
+                  <p className={`inline-flex rounded-full border px-3 py-1 text-[11px] font-bold uppercase tracking-[0.18em] ${currentCommandTone.missionBadgeClass}`}>
+                    {currentCommandTone.missionLabel}
+                  </p>
                   {currentCommand.inputSourceLabel && (
-                    <p className={`inline-block rounded border px-3 py-1 text-sm font-semibold uppercase tracking-wide ${currentCommand.inputSourceBadgeClass}`}>
+                    <p className={`inline-flex rounded-full border px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] ${currentCommand.inputSourceBadgeClass}`}>
                       {currentCommand.inputSourceLabel}
                     </p>
                   )}
+                  <p className={`inline-flex rounded-full border px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] ${currentCommandTone.statusBadgeClass}`}>
+                    {currentCommandStatusLabel}
+                  </p>
                   {currentCommand.pendingExecute && (
-                    <p className="inline-block rounded border border-yellow-400 px-3 py-1 text-sm font-semibold uppercase tracking-wide text-yellow-200">
+                    <p className="inline-flex rounded-full border border-amber-200/60 bg-amber-300/15 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-amber-50">
                       Awaiting Execute
                     </p>
                   )}
                 </div>
+                <div className="flex flex-wrap items-start gap-3">
+                  <h2 className={`min-w-0 truncate font-bold ${currentCommandTone.titleClass} ${missionBannerCollapsed ? 'text-2xl' : 'text-3xl md:text-[2rem]'}`}>
+                    {currentCommand.target || 'UNKNOWN'}
+                  </h2>
+                </div>
+                {!missionBannerCollapsed && (
+                  <p className={`mt-2 max-w-3xl text-sm ${currentCommandTone.detailClass}`}>
+                    {currentCommandTone.missionSummary}
+                  </p>
+                )}
               </div>
               <div className="ml-auto flex items-center gap-3 text-right text-sm text-gray-300">
                 <div>
                   <p>{currentCommand.timestamp}</p>
-                  <p className="text-xs uppercase tracking-wide text-gray-400">
-                    {currentCommand.status.replace(/_/g, ' ')}
+                  <p className="text-xs uppercase tracking-[0.16em] text-gray-400">
+                    {currentCommand.goal.replace(/_/g, ' ')}
                   </p>
                 </div>
                 <button
@@ -1296,44 +1397,51 @@ function App() {
             </div>
 
             {missionBannerCollapsed ? (
-              <div className="mt-3 flex flex-wrap gap-x-6 gap-y-2 text-sm text-gray-200">
-                <span>Origin: {sanitizeUnitIdentifiers(currentCommand.origin || 'unknown')}</span>
-                <span>Signal: {currentCommand.inputSourceSummary}</span>
-                <span>Nodes: {currentCommand.nodes}</span>
-                <span>Propagation: {currentCommand.totalTime}</span>
+              <div className="mt-3 flex flex-wrap gap-2 text-sm text-gray-100">
+                {currentCommandStats.map((item) => (
+                  <span
+                    key={item.label}
+                    className={`inline-flex rounded-full border px-3 py-1 ${currentCommandTone.statCardClass}`}
+                  >
+                    <span className="mr-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-gray-400">{item.label}</span>
+                    <span className="font-medium text-gray-100">{item.value}</span>
+                  </span>
+                ))}
+                <span className={`inline-flex rounded-full border px-3 py-1 ${currentCommandTone.statCardClass}`}>
+                  <span className="mr-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-gray-400">Signal</span>
+                  <span className="font-medium text-gray-100">{currentCommand.inputSourceSummary}</span>
+                </span>
               </div>
             ) : (
-              <div className="mt-4 flex flex-col gap-4">
-                <div className="grid gap-4 md:grid-cols-5 md:gap-8">
-                  <div>
-                    <p className="text-xs text-gray-300 uppercase">Origin Soldier</p>
-                    <p className="text-xl font-bold text-white">
-                      {sanitizeUnitIdentifiers(currentCommand.origin || 'unknown')}
+              <div className="mt-4 flex flex-col gap-3">
+                <div className="grid gap-3 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
+                  <div className={`rounded-2xl border p-4 ${currentCommandTone.statCardClass}`}>
+                    <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-gray-400">Signal Path</p>
+                    <div className="mt-2 flex flex-wrap items-center gap-2">
+                      <p className="text-lg font-bold text-white">{currentCommand.inputSourceSummary}</p>
+                      <span className={`inline-flex rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] ${currentCommand.inputSourceBadgeClass}`}>
+                        {currentCommand.callsign}
+                      </span>
+                    </div>
+                    <p className={`mt-2 text-sm ${currentCommandTone.detailClass}`}>
+                      {currentCommand.inputSourceDetail}
                     </p>
                   </div>
-                  <div>
-                    <p className="text-xs text-gray-300 uppercase">Status</p>
-                    <p className="text-xl font-bold text-white capitalize">
-                      {currentCommand.status.replace(/_/g, ' ')}
+                  <div className={`rounded-2xl border p-4 ${currentCommandTone.messageClass}`}>
+                    <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-gray-400">Operator Message</p>
+                    <p className={`mt-2 text-sm leading-6 ${currentCommand.message ? 'text-white' : currentCommandTone.detailClass}`}>
+                      {currentCommand.message || 'Command received and pinned for live mission awareness.'}
                     </p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-gray-300 uppercase">Active Nodes</p>
-                    <p className="text-3xl font-bold text-white">{currentCommand.nodes}</p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-gray-300 uppercase">Propagation Time</p>
-                    <p className="text-2xl font-bold text-white">{currentCommand.totalTime}</p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-gray-300 uppercase">Signal Path</p>
-                    <p className="text-lg font-bold text-white">{currentCommand.inputSourceSummary}</p>
-                    <p className="mt-1 text-xs text-cyan-100/80">{currentCommand.inputSourceDetail}</p>
                   </div>
                 </div>
-                {currentCommand.message && (
-                  <p className="text-xs italic text-gray-300">"{currentCommand.message}"</p>
-                )}
+                <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                  {currentCommandStats.map((item) => (
+                    <div key={item.label} className={`rounded-2xl border p-4 ${currentCommandTone.statCardClass}`}>
+                      <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-gray-400">{item.label}</p>
+                      <p className="mt-2 text-xl font-semibold text-white">{item.value}</p>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
           </div>
