@@ -3,7 +3,7 @@
   "timestamp_ms": 0,
   "coordinate_space_size": 1000,
   "map_overlay": {
-    "asset_url": "/scenario-assets/overlay-ff8c3d0fc70343f4a06f329bb638848c.png",
+    "asset_url": "http://100.71.205.85:8000/scenario-assets/overlay-ff8c3d0fc70343f4a06f329bb638848c.png",
     "asset_path": "scenario_assets/overlay-ff8c3d0fc70343f4a06f329bb638848c.png",
     "opacity": 0.72,
     "visible": true
@@ -19,7 +19,7 @@
         188.56495553884562,
         445.99581418961316
       ],
-      "transmission_range": 190.0,
+      "transmission_range": 400.0,
       "render": {
         "shape": "square",
         "color": "#8B5CF6",
@@ -36,7 +36,7 @@
         171.90457279487143,
         640.6190740662662
       ],
-      "transmission_range": 190.0,
+      "transmission_range": 400.0,
       "render": {
         "shape": "square",
         "color": "#8B5CF6",
@@ -53,7 +53,7 @@
         233.2449602990561,
         637.5898997797746
       ],
-      "transmission_range": 190.0,
+      "transmission_range": 400.0,
       "render": {
         "shape": "square",
         "color": "#8B5CF6",
@@ -70,7 +70,7 @@
         93.52518735745532,
         616.764484542915
       ],
-      "transmission_range": 190.0,
+      "transmission_range": 400.0,
       "render": {
         "shape": "square",
         "color": "#8B5CF6",
@@ -87,7 +87,7 @@
         90.11737260446301,
         722.4062742566746
       ],
-      "transmission_range": 190.0,
+      "transmission_range": 400.0,
       "render": {
         "shape": "square",
         "color": "#8B5CF6",
@@ -104,7 +104,7 @@
         393.03290546038,
         631.5315764840345
       ],
-      "transmission_range": 190.0,
+      "transmission_range": 400.0,
       "render": {
         "shape": "square",
         "color": "#8B5CF6",
@@ -121,7 +121,7 @@
         393.03290546038,
         679.2408060852233
       ],
-      "transmission_range": 190.0,
+      "transmission_range": 400.0,
       "render": {
         "shape": "square",
         "color": "#8B5CF6",
@@ -138,7 +138,7 @@
         340.02270932818243,
         675.0757230378515
       ],
-      "transmission_range": 190.0,
+      "transmission_range": 400.0,
       "render": {
         "shape": "square",
         "color": "#8B5CF6",
@@ -155,7 +155,7 @@
         344.18779237555435,
         728.0859444472924
       ],
-      "transmission_range": 190.0,
+      "transmission_range": 400.0,
       "render": {
         "shape": "square",
         "color": "#8B5CF6",
@@ -172,7 +172,7 @@
         348.70164587922716,
         445.4325668830485
       ],
-      "transmission_range": 190.0,
+      "transmission_range": 400.0,
       "render": {
         "shape": "square",
         "color": "#8B5CF6",
@@ -189,7 +189,7 @@
         356.1208483830595,
         380.2498081027247
       ],
-      "transmission_range": 190.0,
+      "transmission_range": 400.0,
       "render": {
         "shape": "square",
         "color": "#8B5CF6",
@@ -206,7 +206,7 @@
         422.893519300004,
         385.01924127749305
       ],
-      "transmission_range": 190.0,
+      "transmission_range": 400.0,
       "render": {
         "shape": "square",
         "color": "#8B5CF6",
@@ -220,8 +220,8 @@
       "role": "attack-drone",
       "behavior": "lurk",
       "position": [
-        482.7738870898818,
-        335.5234122662264
+        356.457112457274,
+        788.2287514672067
       ],
       "transmission_range": 160.0,
       "render": {
@@ -238,8 +238,8 @@
       "role": "attack-drone",
       "behavior": "lurk",
       "position": [
-        482.33219771953225,
-        497.1841986714542
+        197.08523843820788,
+        720.4149434003346
       ],
       "transmission_range": 160.0,
       "render": {
@@ -256,8 +256,8 @@
       "role": "attack-drone",
       "behavior": "lurk",
       "position": [
-        469.52300378696316,
-        616.0004590273716
+        246.78656914017583,
+        720.4150444519177
       ],
       "transmission_range": 160.0,
       "render": {
@@ -274,8 +274,8 @@
       "role": "attack-drone",
       "behavior": "lurk",
       "position": [
-        498.23321724454786,
-        420.7707749944978
+        226.97943664732807,
+        392.61781582655584
       ],
       "transmission_range": 160.0,
       "render": {
@@ -292,8 +292,8 @@
       "role": "attack-drone",
       "behavior": "lurk",
       "position": [
-        285.33570565715223,
-        637.2018710483385
+        468.99630756336484,
+        719.5424315233442
       ],
       "transmission_range": 160.0,
       "render": {
@@ -310,8 +310,8 @@
       "role": "attack-drone",
       "behavior": "lurk",
       "position": [
-        342.7562083944839,
-        627.0428638859748
+        275.0253958296981,
+        667.9982439742151
       ],
       "transmission_range": 160.0,
       "render": {
@@ -328,8 +328,8 @@
       "role": "attack-drone",
       "behavior": "lurk",
       "position": [
-        221.28976126836122,
-        400.45278594382467
+        311.9623080115555,
+        503.2194398267348
       ],
       "transmission_range": 160.0,
       "render": {
@@ -346,8 +346,8 @@
       "role": "attack-drone",
       "behavior": "lurk",
       "position": [
-        180.21201797450294,
-        396.4774805144625
+        559.7689350574445,
+        462.07567951524703
       ],
       "transmission_range": 160.0,
       "render": {
@@ -364,8 +364,8 @@
       "role": "attack-drone",
       "behavior": "lurk",
       "position": [
-        147.9682010949327,
-        425.18774452015543
+        301.98674486172916,
+        358.9624218803893
       ],
       "transmission_range": 160.0,
       "render": {
@@ -382,8 +382,8 @@
       "role": "compute-drone",
       "behavior": "lurk",
       "position": [
-        417.21854304635764,
-        450.6571371823747
+        410.50811161268626,
+        503.23960394785627
       ],
       "transmission_range": 420.0,
       "render": {
@@ -399,8 +399,8 @@
       "role": "compute-drone",
       "behavior": "lurk",
       "position": [
-        297.68212425787715,
-        416.8822623246553
+        412.40065243233477,
+        722.091704446485
       ],
       "transmission_range": 420.0,
       "render": {
@@ -416,8 +416,8 @@
       "role": "compute-drone",
       "behavior": "lurk",
       "position": [
-        268.992971487733,
-        683.1382606011769
+        309.89032135730974,
+        624.7870634302134
       ],
       "transmission_range": 420.0,
       "render": {
@@ -431,10 +431,10 @@
       "label": "Recon Drone 1",
       "type": "recon",
       "role": "recon-drone",
-      "behavior": "lurk",
+      "behavior": "patrol",
       "position": [
-        423.5866015970978,
-        321.3891565411224
+        454.799413646346,
+        826.596231326836
       ],
       "transmission_range": 170.0,
       "render": {
@@ -450,10 +450,10 @@
       "label": "Recon Drone 2",
       "type": "recon",
       "role": "recon-drone",
-      "behavior": "lurk",
+      "behavior": "patrol",
       "position": [
-        368.81626035591734,
-        318.738969770917
+        494.186345490992,
+        516.5180757420094
       ],
       "transmission_range": 170.0,
       "render": {
@@ -469,10 +469,10 @@
       "label": "Recon Drone 3",
       "type": "recon",
       "role": "recon-drone",
-      "behavior": "lurk",
+      "behavior": "patrol",
       "position": [
-        479.6820109493268,
-        711.8485372438968
+        440.7041506450965,
+        642.7299492490215
       ],
       "transmission_range": 170.0,
       "render": {
@@ -488,10 +488,10 @@
       "label": "Recon Drone 4",
       "type": "recon",
       "role": "recon-drone",
-      "behavior": "lurk",
+      "behavior": "patrol",
       "position": [
-        504.4169695256576,
-        552.3962229644707
+        465.11562712191676,
+        340.0914216591402
       ],
       "transmission_range": 170.0,
       "render": {
@@ -501,6 +501,23 @@
       },
       "detection_radius": 220.0,
       "speed": 95.0
+    },
+    {
+      "id": "soldier-13",
+      "label": "Soldier Operator 13",
+      "type": "soldier",
+      "role": "operator-node",
+      "behavior": "lurk",
+      "position": [
+        259.6026603749257,
+        411.6514597507502
+      ],
+      "transmission_range": 400.0,
+      "render": {
+        "shape": "square",
+        "color": "#8B5CF6",
+        "radius": 14
+      }
     }
   ],
   "enemies": [
@@ -1012,13 +1029,13 @@
       "status": "intact",
       "blocking_size": 0.92,
       "position": [
-        324.06,
-        700.0
+        325.48,
+        699.64
       ],
       "footprint": {
         "kind": "rect",
-        "x": 278.22,
-        "y": 656.81,
+        "x": 279.64,
+        "y": 656.45,
         "width": 91.68,
         "height": 86.38
       },
@@ -1060,13 +1077,13 @@
       "status": "intact",
       "blocking_size": 0.65,
       "position": [
-        497.35,
-        655.49
+        497.7,
+        652.64
       ],
       "footprint": {
         "kind": "rect",
-        "x": 467.94,
-        "y": 626.08,
+        "x": 468.29,
+        "y": 623.23,
         "width": 58.82,
         "height": 58.82
       },

@@ -178,7 +178,7 @@ export class Drone extends Entity {
       attack: 15
     }[droneType] || 12
     const defaultTransmissionRange = {
-      soldier: 190,
+      soldier: 400,
       compute: 420,
       recon: 170,
       attack: 160

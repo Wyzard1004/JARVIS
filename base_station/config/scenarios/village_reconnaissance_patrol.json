@@ -15,7 +15,7 @@
       "type": "soldier",
       "role": "operator-node",
       "behavior": "lurk",
-      "transmission_range": 190.0,
+      "transmission_range": 400.0,
       "render": {
         "shape": "square",
         "color": "#8B5CF6",
@@ -32,7 +32,7 @@
       "type": "soldier",
       "role": "operator-node",
       "behavior": "lurk",
-      "transmission_range": 190.0,
+      "transmission_range": 400.0,
       "render": {
         "shape": "square",
         "color": "#8B5CF6",

@@ -13,6 +13,7 @@ import json
 import os
 import asyncio
 import re
+from collections import deque
 from copy import deepcopy
 from datetime import datetime
 from itertools import count
@@ -107,6 +108,8 @@ class ConnectionManager:
 manager = ConnectionManager()
 pending_execute_commands: Dict[str, Dict] = {}
 relay_packet_sequence = count(1)
+COMMAND_TRACE_LIMIT = max(25, int(os.getenv("JARVIS_COMMAND_TRACE_LIMIT", "250")))
+command_trace_log = deque(maxlen=COMMAND_TRACE_LIMIT)
 
 
 def _env_flag(name: str, default: bool) -> bool:
@@ -121,6 +124,18 @@ RELAY_BRIDGE_URL = os.getenv("JARVIS_RELAY_BRIDGE_URL", "http://127.0.0.1:8765/r
 RELAY_BRIDGE_TIMEOUT_SEC = float(os.getenv("JARVIS_RELAY_BRIDGE_TIMEOUT_SEC", "0.35"))
 RELAY_BRIDGE_MAX_HOPS = int(os.getenv("JARVIS_RELAY_MAX_HOPS", "2"))
 RELAY_BRIDGE_TTL_MS = int(os.getenv("JARVIS_RELAY_TTL_MS", "15000"))
+
+
+def _record_command_trace(trace_id: str, stage: str, **details) -> Dict:
+    entry = {
+        "trace_id": trace_id,
+        "stage": stage,
+        "timestamp": datetime.now().isoformat(),
+        **details,
+    }
+    command_trace_log.append(entry)
+    print(f"[TRACE {trace_id}] {stage}: {json.dumps(details, default=str)}")
+    return entry
 
 
 def _scenario_key_for_path(path: Path) -> str:
@@ -400,8 +415,10 @@ def _command_scope_key(swarm_intent: Dict, parsed_command: Dict | None = None) -
 def _pending_execute_payload(
     *,
     event: str,
+    trace_id: str | None,
     status: str,
     message: str,
+    command_id: str,
     transcribed_text: str,
     parsed_command: Dict,
     confirmation_text: str | None,
@@ -412,6 +429,8 @@ def _pending_execute_payload(
     context = _operator_context_snapshot(state)
     return {
         "event": event,
+        "trace_id": trace_id,
+        "command_id": command_id,
         "status": status,
         "message": message,
         "algorithm": state.get("algorithm", "gossip"),
@@ -420,6 +439,7 @@ def _pending_execute_payload(
         "nodes": state.get("nodes", []),
         "edges": state.get("edges", []),
         "active_nodes": _build_active_nodes(state),
+        "simulation_settings": state.get("simulation_settings", {}),
         "transcribed_text": transcribed_text,
         "parsed_command": parsed_command,
         "confirmation_text": confirmation_text,
@@ -433,6 +453,40 @@ def _pending_execute_payload(
         "operator_context": context,
         "timestamp": datetime.now().isoformat(),
     }
+
+
+def _ignored_command_payload(
+    *,
+    trace_id: str | None,
+    command_id: str,
+    message: str,
+    transcribed_text: str,
+    parsed_command: Dict | None,
+    confirmation_text: str | None,
+    scope_key: str,
+) -> Dict:
+    swarm = get_swarm()
+    state = swarm.get_state()
+    payload = _build_state_snapshot_message(state, "command_ignored")
+    payload.update(
+        {
+            "trace_id": trace_id,
+            "command_id": command_id,
+            "status": "ignored",
+            "message": message,
+            "origin": scope_key or payload.get("origin"),
+            "target_location": _humanize_location(
+                (parsed_command or {}).get("target_location")
+                or (parsed_command or {}).get("avoid_location")
+                or payload.get("target_location")
+            ),
+            "transcribed_text": transcribed_text,
+            "parsed_command": parsed_command,
+            "confirmation_text": confirmation_text,
+            "timestamp": datetime.now().isoformat(),
+        }
+    )
+    return payload
 
 
 def _action_code_from_goal(goal: str | None) -> str:
@@ -611,7 +665,14 @@ def _simulate_signal_animations(propagation_order: list, edges: list) -> list:
     return animations
 
 
-def _build_lean_ui_event(consensus_result: Dict, transcribed_text: str, parsed_command: Dict | None, confirmation_text: str | None) -> Dict:
+def _build_lean_ui_event(
+    consensus_result: Dict,
+    transcribed_text: str,
+    parsed_command: Dict | None,
+    confirmation_text: str | None,
+    trace_id: str | None = None,
+    command_id: str | None = None,
+) -> Dict:
     """Build a lean response for WebSocket broadcast to React UI (minimal payload)."""
     active_nodes = _build_active_nodes(consensus_result)
     context = _operator_context_snapshot()
@@ -650,7 +711,15 @@ def _build_lean_ui_event(consensus_result: Dict, transcribed_text: str, parsed_c
     
     # Simplify propagation order (just node id, timestamp, hop)
     prop_order = consensus_result.get("propagation_order", [])
-    lean_prop = [{"node": p.get("node"), "hop": p.get("hop"), "timestamp_ms": p.get("timestamp_ms")} for p in prop_order]
+    lean_prop = [
+        {
+            "node": p.get("node"),
+            "hop": p.get("hop"),
+            "timestamp_ms": p.get("timestamp_ms"),
+            "via": p.get("via") or p.get("from"),
+        }
+        for p in prop_order
+    ]
     
     # Simulate enemy detection and attacks
     target_location = consensus_result.get("target_location", "")
@@ -661,6 +730,8 @@ def _build_lean_ui_event(consensus_result: Dict, transcribed_text: str, parsed_c
     
     return {
         "event": "gossip_update",
+        "trace_id": trace_id,
+        "command_id": command_id,
         "status": consensus_result.get("status", "propagating"),
         "message": "Command executing via swarm consensus protocol",
         "algorithm": consensus_result.get("algorithm"),
@@ -689,6 +760,7 @@ def _build_lean_ui_event(consensus_result: Dict, transcribed_text: str, parsed_c
         "structures": consensus_result.get("structures", []),
         "special_entities": consensus_result.get("special_entities", []),
         "events": consensus_result.get("events", []),
+        "simulation_settings": consensus_result.get("simulation_settings", {}),
         "transcribed_text": transcribed_text,
         "parsed_command": parsed_command,
         "pending_execute": {"present": False},
@@ -718,6 +790,7 @@ def _build_swarm_event(consensus_result: Dict, transcribed_text: str, parsed_com
         "active_nodes": _build_active_nodes(consensus_result),
         "propagation_order": consensus_result.get("propagation_order", []),
         "total_propagation_ms": consensus_result.get("total_propagation_ms", 0),
+        "simulation_settings": consensus_result.get("simulation_settings", {}),
         "transcribed_text": transcribed_text,
         "parsed_command": parsed_command,
         "confirmation_text": confirmation_text,
@@ -750,6 +823,8 @@ def _build_state_snapshot_message(state: Dict, event_name: str = "state_update")
         "drone_behaviors": state.get("drone_behaviors", {}),
         "active_gossip_messages": state.get("active_gossip_messages", []),
         "active_nodes": _build_active_nodes(state),
+        "propagation_order": state.get("propagation_order", []),
+        "total_propagation_ms": state.get("total_propagation_ms", 0),
         "target_location": state.get("target_location"),
         "target_x": state.get("target_x", 0),
         "target_y": state.get("target_y", 0),
@@ -760,6 +835,7 @@ def _build_state_snapshot_message(state: Dict, event_name: str = "state_update")
         "object_reports": state.get("object_reports", []),
         "benchmark": state.get("benchmark", {}),
         "network_profile": state.get("network_profile", {}),
+        "simulation_settings": state.get("simulation_settings", {}),
         "map_overlay": state.get("map_overlay", {}),
         "enemies": state.get("enemies", []),
         "structures": state.get("structures", []),
@@ -854,7 +930,14 @@ async def _broadcast_state_snapshot(swarm) -> Dict:
     return snapshot
 
 
-async def _dispatch_swarm_command(transcribed_text: str, swarm_intent: Dict, parsed_command: Dict | None = None) -> Dict:
+async def _dispatch_swarm_command(
+    transcribed_text: str,
+    swarm_intent: Dict,
+    parsed_command: Dict | None = None,
+    trace_id: str | None = None,
+) -> Dict:
+    trace_id = trace_id or uuid4().hex
+    command_id = uuid4().hex
     confirmation_text = create_confirmation_text(parsed_command) if parsed_command else None
     action_code = swarm_intent.get("action_code", "NO_OP")
     scope_key = _command_scope_key(swarm_intent, parsed_command)
@@ -876,30 +959,53 @@ async def _dispatch_swarm_command(transcribed_text: str, swarm_intent: Dict, par
         }
         payload = _pending_execute_payload(
             event="command_pending",
+            trace_id=trace_id,
             status="pending_execute",
             message="Attack command staged. Awaiting EXECUTE.",
+            command_id=command_id,
             transcribed_text=transcribed_text,
             parsed_command=parsed_command,
             confirmation_text=confirmation_text,
             scope_key=scope_key,
         )
         await manager.broadcast(payload)
+        _record_command_trace(
+            trace_id,
+            "dispatch_result",
+            event=payload.get("event"),
+            status=payload.get("status"),
+            origin=payload.get("origin"),
+            goal=(parsed_command or {}).get("goal"),
+            command_id=command_id,
+            websocket_connections=len(manager.active_connections),
+        )
         await _mirror_event_to_hardware(payload, relay_command, scope_key)
         return payload
 
     if parsed_command and parsed_command.get("goal") == "EXECUTE":
         pending = pending_execute_commands.pop(scope_key, None)
         if not pending:
-            return {
-                "status": "ignored",
-                "message": "No pending destructive command awaiting EXECUTE.",
-                "transcribed_text": transcribed_text,
-                "parsed_command": parsed_command,
-                "confirmation_text": confirmation_text,
-                "nodes": [],
-                "edges": [],
-                "active_nodes": [],
-            }
+            payload = _ignored_command_payload(
+                trace_id=trace_id,
+                command_id=command_id,
+                message="No pending destructive command awaiting EXECUTE.",
+                transcribed_text=transcribed_text,
+                parsed_command=parsed_command,
+                confirmation_text=confirmation_text,
+                scope_key=scope_key,
+            )
+            await manager.broadcast(payload)
+            _record_command_trace(
+                trace_id,
+                "dispatch_result",
+                event=payload.get("event"),
+                status=payload.get("status"),
+                origin=payload.get("origin"),
+                goal=(parsed_command or {}).get("goal"),
+                command_id=command_id,
+                websocket_connections=len(manager.active_connections),
+            )
+            return payload
 
         swarm_intent = deepcopy(pending["swarm_intent"])
         parsed_command = deepcopy(pending["parsed_command"])
@@ -913,28 +1019,51 @@ async def _dispatch_swarm_command(transcribed_text: str, swarm_intent: Dict, par
         message = "Pending command disregarded." if canceled else "No pending command to disregard."
         payload = _pending_execute_payload(
             event="command_canceled",
+            trace_id=trace_id,
             status="canceled",
             message=message,
+            command_id=command_id,
             transcribed_text=transcribed_text,
             parsed_command=parsed_command,
             confirmation_text=confirmation_text,
             scope_key=scope_key,
         )
         await manager.broadcast(payload)
+        _record_command_trace(
+            trace_id,
+            "dispatch_result",
+            event=payload.get("event"),
+            status=payload.get("status"),
+            origin=payload.get("origin"),
+            goal=(parsed_command or {}).get("goal"),
+            command_id=command_id,
+            websocket_connections=len(manager.active_connections),
+        )
         await _mirror_event_to_hardware(payload, relay_command, scope_key)
         return payload
 
     if action_code == "NO_OP":
-        return {
-            "status": "ignored",
-            "message": "Command could not be safely interpreted",
-            "transcribed_text": transcribed_text,
-            "parsed_command": parsed_command,
-            "confirmation_text": confirmation_text,
-            "nodes": [],
-            "edges": [],
-            "active_nodes": [],
-        }
+        payload = _ignored_command_payload(
+            trace_id=trace_id,
+            command_id=command_id,
+            message="Command could not be safely interpreted",
+            transcribed_text=transcribed_text,
+            parsed_command=parsed_command,
+            confirmation_text=confirmation_text,
+            scope_key=scope_key,
+        )
+        await manager.broadcast(payload)
+        _record_command_trace(
+            trace_id,
+            "dispatch_result",
+            event=payload.get("event"),
+            status=payload.get("status"),
+            origin=payload.get("origin"),
+            goal=(parsed_command or {}).get("goal"),
+            command_id=command_id,
+            websocket_connections=len(manager.active_connections),
+        )
+        return payload
 
     swarm = get_swarm()
     algorithm = (swarm_intent.get("consensus_algorithm") or "gossip").lower()
@@ -951,9 +1080,21 @@ async def _dispatch_swarm_command(transcribed_text: str, swarm_intent: Dict, par
         transcribed_text,
         parsed_command,
         confirmation_text,
+        trace_id,
+        command_id,
     )
     
     await manager.broadcast(lean_payload)
+    _record_command_trace(
+        trace_id,
+        "dispatch_result",
+        event=lean_payload.get("event"),
+        status=lean_payload.get("status"),
+        origin=lean_payload.get("origin"),
+        goal=(parsed_command or {}).get("goal"),
+        command_id=command_id,
+        websocket_connections=len(manager.active_connections),
+    )
     await _mirror_event_to_hardware(lean_payload, relay_command, scope_key)
     return lean_payload
 
@@ -970,6 +1111,33 @@ async def health_check():
         "network_profile": swarm.get_network_profile(),
         "pending_execute_count": len(pending_execute_commands),
     }
+
+
+@app.get("/api/debug/command-traces")
+async def get_command_traces(limit: int = 50, trace_id: str | None = None):
+    """Inspect recent command traces for Jetson/browser debugging."""
+    safe_limit = max(1, min(limit, COMMAND_TRACE_LIMIT))
+    traces = list(command_trace_log)
+    if trace_id:
+        traces = [entry for entry in traces if entry.get("trace_id") == trace_id]
+    else:
+        traces = traces[-safe_limit:]
+
+    return {
+        "traces": traces,
+        "count": len(traces),
+        "trace_capacity": COMMAND_TRACE_LIMIT,
+        "active_websocket_connections": len(manager.active_connections),
+        "pending_execute_count": len(pending_execute_commands),
+    }
+
+
+@app.delete("/api/debug/command-traces")
+async def clear_command_traces():
+    """Clear the in-memory command trace buffer."""
+    cleared = len(command_trace_log)
+    command_trace_log.clear()
+    return {"status": "cleared", "cleared": cleared}
 
 
 @app.websocket("/ws/swarm")
@@ -1232,23 +1400,57 @@ async def handle_websocket_command(command: Dict, swarm) -> Dict:
 @app.post("/api/voice-command")
 async def voice_command(payload: Dict):
     """Process a text voice command from the React UI."""
+    trace_id = uuid4().hex
     transcribed_text = (payload.get("transcribed_text") or "").strip()
     has_direct_intent = any(payload.get(key) for key in ("target_location", "target", "action_code", "action"))
+    _record_command_trace(
+        trace_id,
+        "voice_command_received",
+        origin=payload.get("origin"),
+        operator_node=payload.get("operator_node"),
+        has_direct_intent=has_direct_intent,
+        transcribed_text=transcribed_text,
+    )
 
     if has_direct_intent:
         swarm_intent = mock_parse_intent(payload)
+        _record_command_trace(
+            trace_id,
+            "swarm_intent_built",
+            origin=swarm_intent.get("origin"),
+            operator_node=swarm_intent.get("operator_node"),
+            action_code=swarm_intent.get("action_code"),
+            target_location=swarm_intent.get("target_location"),
+        )
         return await _dispatch_swarm_command(
             transcribed_text or "Direct command",
             swarm_intent,
             swarm_intent.get("parsed_command"),
+            trace_id=trace_id,
         )
 
     if not transcribed_text:
         raise HTTPException(status_code=400, detail="No transcription provided")
 
     parsed_command = process_voice_command(transcribed_text)
+    _record_command_trace(
+        trace_id,
+        "voice_command_parsed",
+        transcribed_text=transcribed_text,
+        goal=parsed_command.get("goal"),
+        execution_state=parsed_command.get("execution_state"),
+        target_location=parsed_command.get("target_location") or parsed_command.get("avoid_location"),
+    )
     swarm_intent = _to_swarm_intent(parsed_command, transcribed_text, payload)
-    return await _dispatch_swarm_command(transcribed_text, swarm_intent, parsed_command)
+    _record_command_trace(
+        trace_id,
+        "swarm_intent_built",
+        origin=swarm_intent.get("origin"),
+        operator_node=swarm_intent.get("operator_node"),
+        action_code=swarm_intent.get("action_code"),
+        target_location=swarm_intent.get("target_location"),
+    )
+    return await _dispatch_swarm_command(transcribed_text, swarm_intent, parsed_command, trace_id=trace_id)
 
 
 @app.post("/api/transcribe-command")
@@ -1258,9 +1460,20 @@ async def transcribe_command(
     operator_node: str | None = Form(None),
 ):
     """Process recorded microphone audio from the React UI."""
+    trace_id = uuid4().hex
     audio_bytes = await audio.read()
     if not audio_bytes:
         raise HTTPException(status_code=400, detail="No audio uploaded")
+
+    _record_command_trace(
+        trace_id,
+        "audio_received",
+        origin=origin,
+        operator_node=operator_node,
+        filename=audio.filename or "recording.webm",
+        content_type=audio.content_type or "audio/webm",
+        audio_bytes=len(audio_bytes),
+    )
 
     try:
         command_result = process_audio_command(
@@ -1269,18 +1482,41 @@ async def transcribe_command(
             content_type=audio.content_type or "audio/webm",
         )
     except ValueError as exc:
+        _record_command_trace(trace_id, "audio_error", error=str(exc), error_type="validation")
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
+        _record_command_trace(trace_id, "audio_error", error=str(exc), error_type=type(exc).__name__)
         raise HTTPException(status_code=502, detail=f"Audio transcription failed: {exc}") from exc
 
     transcribed_text = command_result["transcribed_text"]
     parsed_command = command_result["parsed_command"]
+    _record_command_trace(
+        trace_id,
+        "audio_parsed",
+        transcribed_text=transcribed_text,
+        goal=parsed_command.get("goal"),
+        execution_state=parsed_command.get("execution_state"),
+        target_location=parsed_command.get("target_location") or parsed_command.get("avoid_location"),
+    )
     payload = {
         "origin": origin,
         "operator_node": operator_node,
     }
     swarm_intent = _to_swarm_intent(parsed_command, transcribed_text, payload)
-    return await _dispatch_swarm_command(transcribed_text, swarm_intent, parsed_command)
+    _record_command_trace(
+        trace_id,
+        "swarm_intent_built",
+        origin=swarm_intent.get("origin"),
+        operator_node=swarm_intent.get("operator_node"),
+        action_code=swarm_intent.get("action_code"),
+        target_location=swarm_intent.get("target_location"),
+    )
+    return await _dispatch_swarm_command(
+        transcribed_text,
+        swarm_intent,
+        parsed_command,
+        trace_id=trace_id,
+    )
 
 
 @app.get("/api/swarm-state")
@@ -1296,6 +1532,7 @@ async def get_swarm_state():
         "edges": state.get("edges", []),
         "active_nodes": _build_active_nodes(state),
         "propagation_order": state.get("propagation_order", []),
+        "total_propagation_ms": state.get("total_propagation_ms", 0),
         "status": state.get("status", "idle"),
         "algorithm": state.get("algorithm", "adaptive-gossip"),
         "target_location": state.get("target_location", "Grid Alpha"),
@@ -1311,6 +1548,7 @@ async def get_swarm_state():
         "object_reports": state.get("object_reports", []),
         "benchmark": state.get("benchmark", {}),
         "network_profile": state.get("network_profile", {}),
+        "simulation_settings": state.get("simulation_settings", {}),
         "pending_execute": {
             "present": bool(pending_execute_commands),
             "count": len(pending_execute_commands),
@@ -1324,6 +1562,25 @@ async def get_swarm_state():
         "operator_context": context,
         "timestamp": state.get("timestamp", datetime.now().isoformat()),
     }
+
+
+@app.put("/api/simulation-settings")
+async def update_simulation_settings(payload: Dict):
+    """Update shared simulation playback controls."""
+    swarm = get_swarm()
+    slowdown_factor = payload.get("slowdown_factor", 1)
+
+    try:
+        swarm.set_simulation_slowdown_factor(slowdown_factor)
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=f"Invalid slowdown_factor: {slowdown_factor}") from exc
+
+    snapshot = await _broadcast_state_snapshot(swarm)
+    snapshot["event"] = "simulation_settings_updated"
+    snapshot["message"] = (
+        f"Simulation slowdown set to {snapshot.get('simulation_settings', {}).get('slowdown_factor', 1)}x"
+    )
+    return snapshot
 
 
 @app.get("/api/operator-context")

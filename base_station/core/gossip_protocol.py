@@ -24,6 +24,12 @@ class GossipProtocol:
     # Constants
     DEFAULT_RETRY_LIMIT = 2
     DEFAULT_RETRY_BACKOFF_MS = 150.0
+
+    @staticmethod
+    def _effective_link_range(source_id: str, target_id: str, source_range: float, target_range: float) -> float:
+        if "compute" in source_id or "compute" in target_id:
+            return max(float(source_range), float(target_range))
+        return min(float(source_range), float(target_range))
     
     def __init__(self, coordinate_space: ContinuousCoordinateSpace, event_bus: EventBus):
         """
@@ -146,9 +152,10 @@ class GossipProtocol:
                 target_pos = drone_positions[target_id]
                 distance = self.coordinate_space.distance(source_pos, target_pos)
                 target_range = transmission_ranges.get(target_id, 3)
-                
-                if distance <= source_range and distance <= target_range:
-                    quality = max(0.5, 1.0 - (distance / max(source_range, target_range)))
+
+                effective_range = self._effective_link_range(source_id, target_id, source_range, target_range)
+                if distance <= effective_range:
+                    quality = max(0.5, 1.0 - (distance / effective_range))
                     edge_key = tuple(sorted((source_id, target_id)))
                     in_tree = edge_key in self._spanning_tree_edges
                     

@@ -5,6 +5,7 @@
 
 import React, { useEffect, useRef, useState } from 'react'
 import { stateToEntities } from '../lib/entities'
+import { getEntityDisplayLabel, getEntityTypeLabel } from '../lib/displayNames'
 import {
   computeVisibilityPolygon,
   createRectFootprint,
@@ -27,7 +28,10 @@ const NATO_PHONETIC_SHORT = ['Alpha', 'Bravo', 'Charlie', 'Delta', 'Echo', 'Foxt
 const DEFAULT_SYMBOL_ASPECT_RATIO = 612 / 792
 const LABEL_MAX_TEXT_WIDTH = 108
 const CANVAS_MARGIN = 6
+const COMMUNICATION_EDGE_FADE_MS = 3000
 const imageCache = new Map()
+
+const getEdgeKey = (source, target) => [source, target].sort().join('::')
 
 const getCachedImage = (url) => {
   if (!url || typeof Image === 'undefined') return null
@@ -44,6 +48,7 @@ const getOverlayCacheKey = (overlay) => overlay?.asset_url || null
 
 function SwarmCanvas({
   state = {},
+  communicationPlayback = null,
   selectedDrone = null,
   selectedMapEntity = null,
   mapMode = 'nato',
@@ -59,6 +64,8 @@ function SwarmCanvas({
   const canvasRef = useRef(null)
   const animationFrameRef = useRef(null)
   const pointerStateRef = useRef(null)
+  const communicationHighlightsRef = useRef([])
+  const communicationTimersRef = useRef([])
   const [hoveredDrone, setHoveredDrone] = useState(null)
   const [hoveredMapEntity, setHoveredMapEntity] = useState(null)
   const [revealedEnemies, setRevealedEnemies] = useState(new Set())
@@ -140,6 +147,47 @@ function SwarmCanvas({
     mergeDetectedIds(setRevealedSpecialEntities, detectTargets(specialEntities))
   }, [blockingFootprints, enemies, reconDrones, specialEntities])
 
+  const clearCommunicationPlayback = () => {
+    for (const timerId of communicationTimersRef.current) {
+      window.clearTimeout(timerId)
+    }
+    communicationTimersRef.current = []
+    communicationHighlightsRef.current = []
+  }
+
+  useEffect(() => {
+    if (!communicationPlayback?.key) return undefined
+
+    clearCommunicationPlayback()
+
+    const startAtMs = Number(communicationPlayback.startedAtMs) || Date.now()
+    const slowdownFactor = Math.max(1, Number(communicationPlayback.slowdownFactor) || 1)
+    const playbackSteps = Array.isArray(communicationPlayback.steps) ? communicationPlayback.steps : []
+
+    for (const step of playbackSteps) {
+      const highlightStartMs = startAtMs + (Math.max(0, Number(step.timestamp_ms) || 0) * slowdownFactor)
+      const timerDelayMs = Math.max(0, highlightStartMs - Date.now())
+
+      const timerId = window.setTimeout(() => {
+        communicationHighlightsRef.current = [
+          ...communicationHighlightsRef.current.filter((highlight) => highlight.edgeKey !== getEdgeKey(step.via, step.node)),
+          {
+            edgeKey: getEdgeKey(step.via, step.node),
+            startedAtMs: Date.now(),
+            fadeEndsAtMs: Date.now() + COMMUNICATION_EDGE_FADE_MS,
+            hop: step.hop
+          }
+        ]
+      }, timerDelayMs)
+
+      communicationTimersRef.current.push(timerId)
+    }
+
+    return () => {
+      clearCommunicationPlayback()
+    }
+  }, [communicationPlayback])
+
   const isLineOfSightBlocked = (x1, y1, x2, y2) => (
     doesAnyFootprintBlockSegment([x1, y1], [x2, y2], blockingFootprints)
   )
@@ -170,47 +218,23 @@ function SwarmCanvas({
     return `${truncated}...`
   }
 
-  const formatLabelText = (rawValue) => {
-    if (!rawValue) return ''
-    return String(rawValue)
-      .replace(/_/g, ' ')
-      .replace(/\b\w/g, (character) => character.toUpperCase())
-  }
-
-  const getEntityDescription = (entity) => {
-    if (entity.label && String(entity.label).toLowerCase() !== String(entity.id || '').toLowerCase()) {
-      return entity.label
+  const getEntityPrimaryLabel = (entity) => {
+    const displayLabel = getEntityDisplayLabel(entity)
+    const rawId = String(entity?.id || '').trim().toLowerCase()
+    if (!displayLabel) {
+      return getEntityTypeLabel(entity)
     }
 
-    if (entity.type === 'drone') {
-      return `${formatLabelText(entity.droneType)} Drone`
+    if (rawId && displayLabel.trim().toLowerCase() === rawId) {
+      return getEntityTypeLabel(entity)
     }
-    if (entity.type === 'enemy') {
-      return `Hostile ${formatLabelText(entity.enemyType)}`
-    }
-    if (entity.type === 'structure') {
-      return formatLabelText(entity.structureType || 'Structure')
-    }
-    if (entity.type === 'poi') {
-      return formatLabelText(entity.poiType || 'Point of Interest')
-    }
-    return null
-  }
 
-  const getEntityCallsign = (entity) => {
-    const rawId = String(entity.id || entity.label || 'unit')
-    return rawId
-      .replace(/^(enemy|structure|special|poi)-/i, '')
-      .toUpperCase()
+    return displayLabel
   }
 
   const getEntityLabelLines = (entity) => {
-    const primary = getEntityCallsign(entity)
-    const secondary = getEntityDescription(entity)
-    if (!secondary || secondary.toLowerCase() === primary.toLowerCase()) {
-      return [primary]
-    }
-    return [primary, secondary]
+    const primary = getEntityPrimaryLabel(entity)
+    return primary ? [primary] : []
   }
 
   const shouldRenderEntityLabel = (entity) => {
@@ -676,6 +700,20 @@ function SwarmCanvas({
   }
 
   const drawTransmissionLines = (ctx) => {
+    const nowMs = Date.now()
+    communicationHighlightsRef.current = communicationHighlightsRef.current.filter(
+      (highlight) => highlight.fadeEndsAtMs > nowMs
+    )
+
+    const highlightAlphaByEdge = new Map()
+    for (const highlight of communicationHighlightsRef.current) {
+      const progress = Math.min(1, Math.max(0, (nowMs - highlight.startedAtMs) / COMMUNICATION_EDGE_FADE_MS))
+      const alpha = 1 - progress
+      if (alpha <= 0) continue
+      const previousAlpha = highlightAlphaByEdge.get(highlight.edgeKey) || 0
+      highlightAlphaByEdge.set(highlight.edgeKey, Math.max(previousAlpha, alpha))
+    }
+
     for (const edge of transmissionGraph) {
       const sourceDrone = droneMap.get(edge.source)
       const targetDrone = droneMap.get(edge.target)
@@ -695,6 +733,21 @@ function SwarmCanvas({
       ctx.strokeStyle = edge.inSpanningTree ? '#FFD700' : '#4A4A4A'
       ctx.lineWidth = edge.inSpanningTree ? 2 : 1
       ctx.globalAlpha = quality * 0.6
+      ctx.beginPath()
+      ctx.moveTo(px1, py1)
+      ctx.lineTo(px2, py2)
+      ctx.stroke()
+      ctx.restore()
+
+      const highlightAlpha = highlightAlphaByEdge.get(getEdgeKey(edge.source, edge.target))
+      if (!highlightAlpha) continue
+
+      ctx.save()
+      ctx.strokeStyle = '#38BDF8'
+      ctx.lineWidth = 4
+      ctx.globalAlpha = Math.min(1, 0.2 + highlightAlpha * 0.85)
+      ctx.shadowColor = '#38BDF8'
+      ctx.shadowBlur = 14 * highlightAlpha
       ctx.beginPath()
       ctx.moveTo(px1, py1)
       ctx.lineTo(px2, py2)

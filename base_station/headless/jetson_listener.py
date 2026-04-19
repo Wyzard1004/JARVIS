@@ -275,6 +275,14 @@ class JetsonWakeListener:
                     "origin": self.operator_node,
                     "operator_node": self.operator_node,
                 }
+            duration_seconds = 0.0
+            if self.channels > 0 and self._device_sample_rate > 0:
+                duration_seconds = len(wav_bytes) / (2 * self.channels * self._device_sample_rate)
+            print(
+                "[LISTENER] Uploading command audio "
+                f"bytes={len(wav_bytes)} duration={duration_seconds:.2f}s "
+                f"to {self.api_url}"
+            )
             response = self._session.post(
                 self.api_url,
                 files={"audio": ("command.wav", wav_bytes, "audio/wav")},
@@ -294,8 +302,11 @@ class JetsonWakeListener:
         status = payload.get("status", "unknown")
         execution_state = parsed.get("execution_state", "NONE")
         origin = payload.get("origin") or self.operator_node or "unknown"
+        trace_id = payload.get("trace_id") or "unknown"
+        command_id = payload.get("command_id") or "unknown"
 
         print(f"[LISTENER] Transcript: {transcript}")
+        print(f"[LISTENER] Trace: {trace_id} command_id={command_id}")
         print(f"[LISTENER] Origin: {origin}")
         print(f"[LISTENER] Status: {status} execution_state={execution_state}")
         print(f"[LISTENER] Parsed goal: {goal} target={target}")

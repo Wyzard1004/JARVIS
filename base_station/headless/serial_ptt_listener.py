@@ -658,6 +658,14 @@ class JetsonSerialPTTListener:
                     "origin": self.operator_node,
                     "operator_node": self.operator_node,
                 }
+            duration_seconds = 0.0
+            if self.channels > 0 and self.sample_rate > 0:
+                duration_seconds = len(wav_bytes) / (2 * self.channels * self.sample_rate)
+            print(
+                "[PTT] Uploading command audio "
+                f"bytes={len(wav_bytes)} duration={duration_seconds:.2f}s "
+                f"to {self.api_url}"
+            )
             response = self._session.post(
                 self.api_url,
                 files={"audio": ("command.wav", wav_bytes, "audio/wav")},
@@ -678,8 +686,11 @@ class JetsonSerialPTTListener:
         status = payload.get("status", "unknown")
         execution_state = parsed.get("execution_state", "NONE")
         origin = payload.get("origin") or self.operator_node or "unknown"
+        trace_id = payload.get("trace_id") or "unknown"
+        command_id = payload.get("command_id") or "unknown"
 
         print(f"[PTT] Transcript: {transcript}")
+        print(f"[PTT] Trace: {trace_id} command_id={command_id}")
         print(f"[PTT] Origin: {origin}")
         print(f"[PTT] Status: {status} execution_state={execution_state}")
         print(f"[PTT] Parsed goal: {goal} target={target}")

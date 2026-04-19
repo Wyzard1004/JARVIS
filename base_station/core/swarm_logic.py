@@ -12,8 +12,9 @@ import heapq
 import itertools
 import json
 import math
-import time
 import os
+import random
+import time
 from copy import deepcopy
 from datetime import datetime
 from pathlib import Path
@@ -54,6 +55,8 @@ class SwarmCoordinator:
     """Owns topology, movement state, and consensus visualizations."""
 
     DEFAULT_SEED = 42
+    DEFAULT_SIMULATION_SLOWDOWN_FACTOR = 1.0
+    MAX_SIMULATION_SLOWDOWN_FACTOR = 100.0
     DEFAULT_RETRY_LIMIT = 3
     DEFAULT_RETRY_BACKOFF_MS = 200.0
     DEFAULT_GOSSIP_FANOUT = 3
@@ -73,11 +76,14 @@ class SwarmCoordinator:
     }
 
     DEFAULT_RANGE_BY_TYPE = {
-        "soldier": 190.0,
-        "compute": 420.0,
+        "soldier": 400.0,
+        "compute": 900.0,
         "recon": 140.0,
         "attack": 140.0,
     }
+
+    ATTACK_ENGAGEMENT_RADIUS = 70.0
+    ATTACKER_LOSS_PROBABILITY = 0.5
 
     PRIORITY_PROFILES = {
         "critical": {"rank": 3},
@@ -90,6 +96,7 @@ class SwarmCoordinator:
 
     def __init__(self, seed: Optional[int] = None, config_path: Optional[str] = None):
         self._message_sequence = itertools.count(1)
+        self._rng = random.Random(seed if seed is not None else self.DEFAULT_SEED)
         self.space = ContinuousCoordinateSpace()
         self.graph = nx.Graph() if nx is not None else SimpleGraph()
         self.event_bus = EventBus(max_history=1000)
@@ -102,6 +109,7 @@ class SwarmCoordinator:
 
         self._drone_positions: Dict[str, Tuple[float, float]] = {}
         self._drone_behaviors: Dict[str, Dict] = {}
+        self._drone_statuses: Dict[str, str] = {}
         self._transmission_ranges: Dict[str, float] = {}
         self._gossip_messages: Dict[str, Dict] = {}
         self._transmission_graph_edges: List[Dict] = []
@@ -109,6 +117,7 @@ class SwarmCoordinator:
         self._spanning_tree_root: Optional[str] = None
         self._last_state: Dict = {}
         self._last_simulation_clock: Optional[float] = None
+        self._simulation_slowdown_factor = self.DEFAULT_SIMULATION_SLOWDOWN_FACTOR
         self._base_nodes: List[Dict] = []
         self._map_overlay: Dict = normalize_overlay(None)
         self._enemies: List[Dict] = []
@@ -129,6 +138,28 @@ class SwarmCoordinator:
             "retry_backoff_ms": self.DEFAULT_RETRY_BACKOFF_MS if not demo_mode else 100.0,
             "lease_ms": self.DEMO_LEASE_MS if demo_mode else self.DEFAULT_LEASE_MS,
             "claim_timeout_ms": self.DEMO_CLAIM_TIMEOUT_MS if demo_mode else self.DEFAULT_CLAIM_TIMEOUT_MS,
+        }
+
+    def set_simulation_slowdown_factor(self, slowdown_factor: float | int | None) -> float:
+        if slowdown_factor is None:
+            normalized = self.DEFAULT_SIMULATION_SLOWDOWN_FACTOR
+        else:
+            normalized = float(slowdown_factor)
+
+        if normalized <= 0.0:
+            normalized = self.DEFAULT_SIMULATION_SLOWDOWN_FACTOR
+
+        self._simulation_slowdown_factor = max(
+            self.DEFAULT_SIMULATION_SLOWDOWN_FACTOR,
+            min(normalized, self.MAX_SIMULATION_SLOWDOWN_FACTOR),
+        )
+        return self._simulation_slowdown_factor
+
+    def get_simulation_settings(self) -> Dict:
+        slowdown_factor = float(self._simulation_slowdown_factor)
+        return {
+            "slowdown_factor": round(slowdown_factor, 2),
+            "speed_multiplier": round(1.0 / slowdown_factor, 4),
         }
 
     def get_network_profile(self) -> Dict:
@@ -183,9 +214,10 @@ class SwarmCoordinator:
         return self.space.clamp_position(float(point[0]), float(point[1]))
 
     def _normalize_range(self, value: float | int | None, node_type: str) -> float:
-        if value is None:
-            return self.DEFAULT_RANGE_BY_TYPE.get(node_type, 140.0)
-        return float(value)
+        normalized = self.DEFAULT_RANGE_BY_TYPE.get(node_type, 140.0) if value is None else float(value)
+        if node_type == "compute":
+            return max(normalized, self.DEFAULT_RANGE_BY_TYPE["compute"])
+        return normalized
 
     def _normalize_entities(self, entities: List[Dict], entity_type: Optional[str] = None) -> List[Dict]:
         normalized = []
@@ -245,6 +277,7 @@ class SwarmCoordinator:
         self._node_lookup = {node["id"]: deepcopy(node) for node in self._base_nodes}
         self._drone_positions = {}
         self._drone_behaviors = {}
+        self._drone_statuses = {}
         self._transmission_ranges = {}
         self._gossip_messages = {}
         self._transmission_graph_edges = []
@@ -270,6 +303,7 @@ class SwarmCoordinator:
         self._node_lookup = {node["id"]: deepcopy(node) for node in self._base_nodes}
         self._drone_positions = {}
         self._drone_behaviors = {}
+        self._drone_statuses = {}
         self._transmission_ranges = {}
         self._gossip_messages = {}
         self._transmission_graph_edges = []
@@ -361,8 +395,10 @@ class SwarmCoordinator:
 
         delta_ms = max(0.0, (current_time - self._last_simulation_clock) * 1000.0)
         self._last_simulation_clock = current_time
-        if delta_ms > 0.0:
-            self.update_drone_positions(delta_ms)
+        effective_delta_ms = delta_ms / max(self._simulation_slowdown_factor, self.DEFAULT_SIMULATION_SLOWDOWN_FACTOR)
+        if effective_delta_ms > 0.0:
+            self.update_drone_positions(effective_delta_ms)
+            self._resolve_attack_engagements()
 
     def _initialize_nodes(self) -> None:
         for node in self._base_nodes:
@@ -374,6 +410,8 @@ class SwarmCoordinator:
 
             self._drone_positions[node_id] = position
             self._transmission_ranges[node_id] = self._normalize_range(node.get("transmission_range"), node_type)
+            node_status = str(node.get("status") or "active")
+            self._drone_statuses[node_id] = node_status
             self._drone_behaviors[node_id] = {
                 "current": node.get("behavior", "lurk"),
                 "waypoints": [list(point) for point in normalized_waypoints],
@@ -384,7 +422,9 @@ class SwarmCoordinator:
 
             node["type"] = node_type
             node["position"] = list(position)
+            node["status"] = node_status
             node["transmission_range"] = self._transmission_ranges[node_id]
+            self._node_lookup[node_id]["status"] = node_status
             self.graph.add_node(node_id, **node)
 
     def _seed_initial_events(self) -> None:
@@ -416,30 +456,46 @@ class SwarmCoordinator:
             return "attack"
         return "unknown"
 
+    def _node_type(self, node_id: str) -> str:
+        node = self._node_lookup.get(node_id, {})
+        return str(node.get("type") or self._infer_node_type(node_id, node.get("role"))).lower()
+
+    def _is_drone_destroyed(self, node_id: str) -> bool:
+        return str(self._drone_statuses.get(node_id, "active")).lower() == "destroyed"
+
+    def _active_drone_ids(self) -> List[str]:
+        return [node_id for node_id in self._drone_positions if not self._is_drone_destroyed(node_id)]
+
+    def _effective_link_range(self, source_id: str, target_id: str) -> float:
+        source_range = self._transmission_ranges[source_id]
+        target_range = self._transmission_ranges[target_id]
+        if "compute" in {self._node_type(source_id), self._node_type(target_id)}:
+            return max(source_range, target_range)
+        return min(source_range, target_range)
+
     def _default_root_node(self) -> Optional[str]:
-        if self._spanning_tree_root in self._drone_positions:
+        if self._spanning_tree_root in self._drone_positions and not self._is_drone_destroyed(self._spanning_tree_root):
             return self._spanning_tree_root
 
-        for node_id in self._drone_positions:
+        for node_id in self._active_drone_ids():
             if node_id.startswith("compute"):
                 return node_id
-        for node_id in self._drone_positions:
+        for node_id in self._active_drone_ids():
             if node_id.startswith("soldier"):
                 return node_id
-        return next(iter(self._drone_positions), None)
+        return next(iter(self._active_drone_ids()), None)
 
     def _raw_transmission_edges(self) -> List[Dict]:
         edges = []
-        node_ids = list(self._drone_positions)
+        node_ids = self._active_drone_ids()
         for index, source_id in enumerate(node_ids):
             source_pos = self._drone_positions[source_id]
-            source_range = self._transmission_ranges[source_id]
             for target_id in node_ids[index + 1:]:
                 target_pos = self._drone_positions[target_id]
-                target_range = self._transmission_ranges[target_id]
                 distance = self.space.distance(source_pos, target_pos)
-                if distance <= source_range and distance <= target_range:
-                    quality = max(0.2, 1.0 - (distance / max(source_range, target_range)))
+                effective_range = self._effective_link_range(source_id, target_id)
+                if distance <= effective_range:
+                    quality = max(0.2, 1.0 - (distance / effective_range))
                     edges.append(
                         {
                             "source": source_id,
@@ -470,7 +526,7 @@ class SwarmCoordinator:
             self._transmission_graph_edges = self._raw_transmission_edges()
 
         root_node = root_node or self._default_root_node()
-        if root_node not in self._drone_positions:
+        if root_node not in self._drone_positions or self._is_drone_destroyed(root_node):
             return {"tree_edges": [], "root": None, "nodes_in_tree": [], "unreachable_nodes": list(self._drone_positions)}
 
         neighbors: Dict[str, List[Tuple[str, float]]] = {node_id: [] for node_id in self._drone_positions}
@@ -525,6 +581,8 @@ class SwarmCoordinator:
     def update_drone_positions(self, delta_ms: float) -> None:
         delta_sec = delta_ms / 1000.0
         for drone_id, behavior in self._drone_behaviors.items():
+            if self._is_drone_destroyed(drone_id):
+                continue
             current = behavior["current"]
             if current not in {"patrol", "transit"}:
                 continue
@@ -600,7 +658,7 @@ class SwarmCoordinator:
         message_id = f"gossip-{next(self._message_sequence):06d}"
         current_time_ms = datetime.now().timestamp() * 1000
         priority_rank = self.PRIORITY_PROFILES.get(priority, self.PRIORITY_PROFILES["high"])["rank"]
-        target_drones = target_drones or list(self._drone_positions.keys())
+        target_drones = target_drones or self._active_drone_ids()
 
         message_state = {
             "message_id": message_id,
@@ -766,10 +824,12 @@ class SwarmCoordinator:
         return [node["id"] for node in self._base_nodes if node.get("role") == "operator-node"]
 
     def _resolve_origin_node(self, raw_origin: Optional[str]) -> str:
-        if raw_origin in self._drone_positions:
+        if raw_origin in self._drone_positions and not self._is_drone_destroyed(raw_origin):
             return raw_origin
-        operators = self._operator_nodes()
-        return operators[0] if operators else next(iter(self._drone_positions), "soldier-1")
+        operators = [node_id for node_id in self._operator_nodes() if not self._is_drone_destroyed(node_id)]
+        if operators:
+            return operators[0]
+        return next(iter(self._active_drone_ids()), "soldier-1")
 
     def _normalize_algorithm(self, raw_algorithm: Optional[str]) -> str:
         algorithm = (raw_algorithm or "gossip").strip().lower()
@@ -784,11 +844,79 @@ class SwarmCoordinator:
         node_ids = list(candidates) if candidates is not None else list(self._drone_positions.keys())
         matches: List[str] = []
         for node_id in node_ids:
+            if self._is_drone_destroyed(node_id):
+                continue
             node = self._node_lookup.get(node_id, {})
             resolved_type = str(node.get("type") or self._infer_node_type(node_id, node.get("role"))).lower()
             if resolved_type == node_type:
                 matches.append(node_id)
         return matches
+
+    def _mark_drone_destroyed(self, node_id: str, timestamp_ms: int, cause: str) -> None:
+        if node_id not in self._drone_positions or self._is_drone_destroyed(node_id):
+            return
+
+        position = self._current_position(node_id)
+        self._drone_statuses[node_id] = "destroyed"
+        if node_id in self._node_lookup:
+            self._node_lookup[node_id]["status"] = "destroyed"
+
+        behavior = self._drone_behaviors.get(node_id)
+        if behavior is not None:
+            behavior["current"] = "destroyed"
+            behavior["waypoints"] = [list(position)]
+            behavior["waypoint_index"] = 0
+            behavior["speed"] = 0.0
+            behavior["progress"] = 0.0
+
+        self.event_bus.drone_destroyed(timestamp_ms, node_id, position, cause=cause)
+
+    def _resolve_attack_engagements(self) -> None:
+        active_enemy_ids = {
+            str(enemy.get("id"))
+            for enemy in self._enemies
+            if str(enemy.get("status", "active")).lower() != "destroyed" and enemy.get("id")
+        }
+        if not active_enemy_ids:
+            return
+
+        timestamp_ms = int(datetime.now().timestamp() * 1000)
+        for attack_id in self._node_ids_by_type("attack"):
+            attack_position = self._current_position(attack_id)
+            best_enemy: Optional[Dict] = None
+            best_enemy_position: Optional[Tuple[float, float]] = None
+            best_distance: Optional[float] = None
+
+            for enemy in self._enemies:
+                enemy_id = str(enemy.get("id") or "")
+                if enemy_id not in active_enemy_ids:
+                    continue
+
+                enemy_position = self._normalize_position(enemy.get("position"))
+                distance = self.space.distance(attack_position, enemy_position)
+                if distance > self.ATTACK_ENGAGEMENT_RADIUS:
+                    continue
+                if best_distance is None or distance < best_distance:
+                    best_enemy = enemy
+                    best_enemy_position = enemy_position
+                    best_distance = distance
+
+            if best_enemy is None or best_enemy_position is None:
+                continue
+
+            enemy_id = str(best_enemy.get("id") or "unknown-target")
+            best_enemy["status"] = "destroyed"
+            active_enemy_ids.discard(enemy_id)
+            self.event_bus.target_destroyed(
+                timestamp_ms,
+                attack_id,
+                best_enemy_position,
+                enemy_id,
+                str(best_enemy.get("subtype") or best_enemy.get("type") or "unknown"),
+            )
+
+            if self._rng.random() < self.ATTACKER_LOSS_PROBABILITY:
+                self._mark_drone_destroyed(attack_id, timestamp_ms, cause=f"counterattack:{enemy_id}")
 
     def _formation_points(
         self,
@@ -854,6 +982,8 @@ class SwarmCoordinator:
     def _enemy_reports_near_target(self, target_position: Tuple[float, float], radius: float = 220.0) -> List[Dict]:
         reports: List[Dict] = []
         for enemy in self._enemies:
+            if str(enemy.get("status", "active")).lower() == "destroyed":
+                continue
             position = self._normalize_position(enemy.get("position"))
             distance = self.space.distance(position, target_position)
             if distance > radius:
@@ -889,7 +1019,7 @@ class SwarmCoordinator:
         compute_nodes = self._node_ids_by_type("compute", active_set)
         recon_nodes = self._node_ids_by_type("recon", active_set)
         attack_nodes = self._node_ids_by_type("attack", active_set)
-        mobile_nodes = [node_id for node_id in [*compute_nodes, *recon_nodes, *attack_nodes] if node_id in active_set]
+        mobile_nodes = [node_id for node_id in [*recon_nodes, *attack_nodes] if node_id in active_set]
 
         target_tasks: List[Dict] = []
         engagements: List[Dict] = []
@@ -943,7 +1073,7 @@ class SwarmCoordinator:
             for attack_id, destination in zip(attack_nodes, self._formation_points(target_position, len(attack_nodes), 130.0)):
                 assign_behavior(attack_id, "transit", self._transit_waypoints(attack_id, destination), "attack_staging")
             for compute_id in compute_nodes:
-                assign_behavior(compute_id, "transit", self._transit_waypoints(compute_id, control_position), "relay_support")
+                hold_node(compute_id, "relay_support")
             for soldier_id in soldiers:
                 hold_node(soldier_id, "operator_overwatch")
 
@@ -963,8 +1093,8 @@ class SwarmCoordinator:
                 )
             for recon_id in recon_nodes:
                 assign_behavior(recon_id, "patrol", self._patrol_waypoints(recon_id, target_position, radius=140.0), "battle_damage_assessment")
-            for compute_id, destination in zip(compute_nodes, self._formation_points(target_position, len(compute_nodes), 180.0)):
-                assign_behavior(compute_id, "transit", self._transit_waypoints(compute_id, destination), "target_processing")
+            for compute_id in compute_nodes:
+                hold_node(compute_id, "target_processing")
             for soldier_id in soldiers:
                 hold_node(soldier_id, "operator_control")
 
@@ -975,6 +1105,8 @@ class SwarmCoordinator:
             formation = self._formation_points(target_position, len(mobile_nodes), 95.0)
             for node_id, destination in zip(mobile_nodes, formation):
                 assign_behavior(node_id, "transit", self._transit_waypoints(node_id, destination), "maneuver")
+            for compute_id in compute_nodes:
+                hold_node(compute_id, "relay_support")
             for soldier_id in soldiers:
                 hold_node(soldier_id, "operator_control")
 
@@ -986,6 +1118,8 @@ class SwarmCoordinator:
             formation = self._formation_points(sync_center, len(mobile_nodes), 105.0)
             for node_id, destination in zip(mobile_nodes, formation):
                 assign_behavior(node_id, "transit", self._transit_waypoints(node_id, destination), "sync_formation")
+            for compute_id in compute_nodes:
+                hold_node(compute_id, "relay_support")
             for soldier_id in soldiers:
                 hold_node(soldier_id, "operator_control")
 
@@ -996,6 +1130,8 @@ class SwarmCoordinator:
             for node_id in mobile_nodes:
                 retreat = self._retreat_destination(node_id, target_position, control_position)
                 assign_behavior(node_id, "transit", self._transit_waypoints(node_id, retreat), "hazard_avoidance")
+            for compute_id in compute_nodes:
+                hold_node(compute_id, "relay_support")
             for soldier_id in soldiers:
                 hold_node(soldier_id, "operator_control")
 
@@ -1018,6 +1154,8 @@ class SwarmCoordinator:
             formation = self._formation_points(target_position, len(mobile_nodes), 120.0)
             for node_id, destination in zip(mobile_nodes, formation):
                 assign_behavior(node_id, "transit", self._transit_waypoints(node_id, destination), "command_execution")
+            for compute_id in compute_nodes:
+                hold_node(compute_id, "relay_support")
             for soldier_id in soldiers:
                 hold_node(soldier_id, "operator_control")
 
@@ -1047,7 +1185,7 @@ class SwarmCoordinator:
         return mission_status, mission_state, object_reports
 
     def _leader_node(self) -> str:
-        for node_id in self._drone_positions:
+        for node_id in self._active_drone_ids():
             if node_id.startswith("compute"):
                 return node_id
         return self._resolve_origin_node(None)
@@ -1060,7 +1198,7 @@ class SwarmCoordinator:
         base["position"] = list(self._drone_positions[node_id])
         base["behavior"] = behavior_state["current"]
         base["transmission_range"] = self._transmission_ranges[node_id]
-        base["status"] = status
+        base["status"] = self._drone_statuses.get(node_id, status)
         base["display_sector"] = self.space.display_sector_label(self._drone_positions[node_id])
         base["next_waypoint"] = (
             waypoints[waypoint_index + 1]
@@ -1221,6 +1359,7 @@ class SwarmCoordinator:
             "structures": deepcopy(self._structures),
             "special_entities": deepcopy(self._special_entities),
             "events": self._recent_events(),
+            "simulation_settings": self.get_simulation_settings(),
         }
         self._last_state = deepcopy(result)
         return result
@@ -1305,15 +1444,16 @@ class SwarmCoordinator:
 
     def _compat_sender_id(self, command: Dict) -> str:
         sender_id = command.get("origin") or command.get("operator_node")
-        if sender_id and sender_id in self._drone_positions:
+        if sender_id and sender_id in self._drone_positions and not self._is_drone_destroyed(sender_id):
             return sender_id
 
         for preferred in self._operator_nodes():
-            if preferred in self._drone_positions:
+            if preferred in self._drone_positions and not self._is_drone_destroyed(preferred):
                 return preferred
 
-        if self._drone_positions:
-            return next(iter(self._drone_positions.keys()))
+        active_ids = self._active_drone_ids()
+        if active_ids:
+            return active_ids[0]
         return "gateway"
 
     def _compat_priority(self, command: Dict) -> str:
@@ -1340,7 +1480,7 @@ class SwarmCoordinator:
             nodes.append(
                 {
                     **node,
-                    "status": node.get("status", "active"),
+                    "status": self._drone_statuses.get(node_id, node.get("status", "active")),
                     "position": [float(position[0]), float(position[1])],
                     "x": float(position[0]),
                     "y": float(position[1]),
@@ -1454,6 +1594,7 @@ class SwarmCoordinator:
                 "simulations": 0,
             },
             "network_profile": self.get_network_profile(),
+            "simulation_settings": self.get_simulation_settings(),
         }
 
     def calculate_gossip_path(self, command: Dict) -> Dict:
@@ -1490,6 +1631,7 @@ class SwarmCoordinator:
         state["structures"] = deepcopy(self._structures)
         state["special_entities"] = deepcopy(self._special_entities)
         state["events"] = self._recent_events()
+        state["simulation_settings"] = self.get_simulation_settings()
         state.setdefault("status", "idle")
         state.setdefault("algorithm", "gossip")
         state.setdefault("active_nodes", [])

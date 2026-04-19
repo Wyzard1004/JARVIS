@@ -18,7 +18,7 @@ export const NATO_SYMBOLS = {
     atakBadge: true,
     label: 'Soldier Operator',
     legendNote: 'Friendly infantry / operator node',
-    range: '190u / 1.5 sectors'
+    range: '400u / 3.2 sectors'
   },
   'allied-compute-drone': {
     key: 'allied-compute-drone',

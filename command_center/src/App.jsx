@@ -83,6 +83,11 @@ const DEFAULT_SEARCH_STATE = {
   engagements: []
 }
 
+const DEFAULT_SIMULATION_SETTINGS = {
+  slowdown_factor: 1,
+  speed_multiplier: 1
+}
+
 const EDITOR_TOOL_OPTIONS = [
   { id: 'select', label: 'Select', description: 'Select and move placed objects' },
   { id: 'building', label: 'Building', description: 'Drag rectangle footprints' },
@@ -105,7 +110,7 @@ const FRIENDLY_FORCE_TOOL_CONFIG = {
     role: 'operator-node',
     labelPrefix: 'Soldier Operator',
     defaultBehavior: 'lurk',
-    transmissionRange: 190,
+    transmissionRange: 400,
     render: {
       shape: 'square',
       color: '#8B5CF6',
@@ -237,8 +242,15 @@ const normalizeSwarmState = (state) => {
     special_entities: Array.isArray(state.special_entities) ? state.special_entities : [],
     nodes: Array.isArray(state.nodes) ? state.nodes : [],
     edges: Array.isArray(state.edges) ? state.edges : [],
+    propagation_order: Array.isArray(state.propagation_order) ? state.propagation_order : [],
+    total_propagation_ms: Number(state.total_propagation_ms) || 0,
     events: Array.isArray(state.events) ? state.events : [],
     object_reports: Array.isArray(state.object_reports) ? state.object_reports : [],
+    simulation_settings: {
+      ...DEFAULT_SIMULATION_SETTINGS,
+      ...(state.simulation_settings || {})
+    },
+    command_id: state.command_id || null,
     pending_execute: typeof state.pending_execute === 'object' && state.pending_execute !== null
       ? state.pending_execute
       : { present: false }
@@ -285,6 +297,36 @@ const buildAvailableSoldiers = (state) => {
   })
 }
 
+const buildCommandHistoryEntry = (payload, fallbackOrigin = 'unknown') => {
+  if (!payload || typeof payload !== 'object') return null
+
+  const commandText = String(payload.transcribed_text || payload.message || '').trim()
+  if (!commandText) return null
+
+  return {
+    commandId: payload.command_id || null,
+    timestamp: payload.timestamp || new Date().toISOString(),
+    origin: payload.origin || payload.operator_context?.active_operator || fallbackOrigin || 'unknown',
+    command: commandText,
+    status: payload.search_state?.mission_status || payload.status || 'unknown',
+    goal: payload.parsed_command?.goal || payload.action_code || 'UNKNOWN',
+    executionState: payload.parsed_command?.execution_state || 'NONE'
+  }
+}
+
+const getCommandHistoryKey = (entry) => {
+  if (!entry) return null
+  if (entry.commandId) return entry.commandId
+  return [
+    entry.timestamp,
+    entry.origin,
+    entry.goal,
+    entry.status,
+    entry.executionState,
+    entry.command
+  ].join('|')
+}
+
 const getNextNodeId = (nodes, prefix) => {
   const pattern = new RegExp(`^${prefix}-(\\d+)$`)
   const nextIndex = (nodes || []).reduce((highest, node) => {
@@ -303,6 +345,7 @@ function App() {
   const [scenarioNameDirty, setScenarioNameDirty] = useState(false)
   const [events, setEvents] = useState([])
   const [currentCommand, setCurrentCommand] = useState(null)
+  const [communicationPlayback, setCommunicationPlayback] = useState(null)
   const [connectionStatus, setConnectionStatus] = useState('disconnected')
   const [commandHistory, setCommandHistory] = useState([])
   const [activeSoldier, setActiveSoldier] = useState('soldier-1')
@@ -320,11 +363,13 @@ function App() {
   const reconnectTimeoutRef = useRef(null)
   const reconnectAttemptsRef = useRef(0)
   const isCleaningUpRef = useRef(false)
+  const seenCommandHistoryKeysRef = useRef(new Set())
   const overlayInputRef = useRef(null)
   const entityIdSequenceRef = useRef(1)
   const activeScenarioKeyRef = useRef('')
   const scenarioNameDirtyRef = useRef(false)
   const scenarioSelectionDirtyRef = useRef(false)
+  const lastPlaybackKeyRef = useRef(null)
   const MAX_RECONNECT_ATTEMPTS = 5
   const RECONNECT_DELAY = 2000
 
@@ -357,6 +402,55 @@ function App() {
     }
     syncScenarioDrafts(normalized.scenario_info, options)
     return normalized
+  }
+
+  const queueCommunicationPlayback = (payload) => {
+    const propagationOrder = Array.isArray(payload?.propagation_order) ? payload.propagation_order : []
+    const playbackSteps = propagationOrder
+      .map((step) => ({
+        node: step?.node,
+        via: step?.via || step?.from || null,
+        hop: Number(step?.hop) || 0,
+        timestamp_ms: Number(step?.timestamp_ms) || 0
+      }))
+      .filter((step) => step.node && step.via && step.node !== step.via)
+
+    if (playbackSteps.length === 0) return
+
+    const playbackKey = payload?.command_id || [
+      payload?.timestamp || '',
+      payload?.origin || '',
+      payload?.target_location || '',
+      playbackSteps.map((step) => `${step.via}>${step.node}@${step.timestamp_ms}`).join('|')
+    ].join('::')
+
+    if (!playbackKey || lastPlaybackKeyRef.current === playbackKey) {
+      return
+    }
+
+    lastPlaybackKeyRef.current = playbackKey
+    setCommunicationPlayback({
+      key: playbackKey,
+      startedAtMs: Date.now(),
+      slowdownFactor: Math.max(1, Number(payload?.simulation_settings?.slowdown_factor) || 1),
+      steps: playbackSteps
+    })
+  }
+
+  const pushCommandHistoryEntry = (payload, fallbackOrigin = activeSoldier) => {
+    const entry = buildCommandHistoryEntry(payload, fallbackOrigin)
+    if (!entry) return
+
+    const historyKey = getCommandHistoryKey(entry)
+    if (!historyKey || seenCommandHistoryKeysRef.current.has(historyKey)) {
+      return
+    }
+
+    seenCommandHistoryKeysRef.current.add(historyKey)
+    setCommandHistory((previous) => {
+      const next = [...previous, entry]
+      return next.length > 100 ? next.slice(-100) : next
+    })
   }
 
   const nextEntityId = (prefix) => `${prefix}-${Date.now()}-${entityIdSequenceRef.current++}`
@@ -410,6 +504,25 @@ function App() {
       ...updates
     }
     await pushEditorPayload(payload, 'Overlay updated')
+  }
+
+  const applySimulationSettingsMutation = async (updates) => {
+    try {
+      const response = await fetch(resolveApiUrl('/api/simulation-settings'), {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updates)
+      })
+      const result = await response.json()
+      if (!response.ok) {
+        throw new Error(result.detail || result.message || 'Simulation settings update failed')
+      }
+      applyIncomingState(result)
+      return result
+    } catch (error) {
+      console.error('[App] Simulation settings update failed:', error)
+      return null
+    }
   }
 
   const fetchSoldierStatus = async (soldierId) => {
@@ -483,10 +596,13 @@ function App() {
             data.event === 'gossip_update' ||
             data.event === 'swarm_state' ||
             data.event === 'command_pending' ||
-            data.event === 'command_canceled'
+            data.event === 'command_canceled' ||
+            data.event === 'command_ignored'
           ) {
             console.log('[App] Updating swarm state from command response')
             applyIncomingState(data)
+            queueCommunicationPlayback(data)
+            pushCommandHistoryEntry(data, data.origin || data.operator_context?.active_operator || activeSoldier)
             if (data.origin) {
               setSelectedDrone(data.origin)
               setSelectedMapEntity(null)
@@ -630,18 +746,18 @@ function App() {
         throw new Error(result.detail || result.message || 'Voice command request failed')
       }
 
-      setCommandHistory((previous) => [...previous, {
-        timestamp: new Date().toISOString(),
-        origin: result.origin || activeSoldier,
-        command: transcriptText,
-        status: result.search_state?.mission_status || result.status,
-        goal: result.parsed_command?.goal || 'UNKNOWN',
-        executionState: result.parsed_command?.execution_state || 'NONE'
-      }])
+      pushCommandHistoryEntry(
+        {
+          ...result,
+          transcribed_text: transcriptText
+        },
+        activeSoldier
+      )
 
       if (result.nodes?.length) {
         applyIncomingState(result)
       }
+      queueCommunicationPlayback(result)
 
       if (result.origin) {
         setSelectedDrone(result.origin)
@@ -905,6 +1021,11 @@ function App() {
     ? getEntityDisplayLabel(activeSoldierRecord)
     : sanitizeUnitIdentifiers(activeSoldier)
   const overlayState = swarmState?.map_overlay || DEFAULT_MAP_OVERLAY
+  const simulationSettings = swarmState?.simulation_settings || DEFAULT_SIMULATION_SETTINGS
+  const simulationSlowdownFactor = Math.max(1, Number(simulationSettings.slowdown_factor) || 1)
+  const simulationSlowdownLabel = simulationSlowdownFactor === 1
+    ? 'Real-time'
+    : `${simulationSlowdownFactor}x slower`
   const activeScenarioInfo = swarmState?.scenario_info || null
   const saveButtonLabel = activeScenarioInfo?.relative_path === 'swarm_initial_state.json'
     ? 'Save New Scenario'
@@ -1027,6 +1148,30 @@ function App() {
                         >
                           {showEntityLabels ? 'Shown' : 'Hidden'}
                         </button>
+                      </div>
+                      <div className="mt-3 rounded border border-gray-700 bg-gray-900/60 px-3 py-3">
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <div className="text-[10px] font-bold uppercase tracking-[0.14em] text-gray-300">Simulation Slowdown</div>
+                            <div className="text-[10px] text-gray-500">Communication links replay against this factor and fade over 3 seconds.</div>
+                          </div>
+                          <div className="rounded border border-cyan-500/40 bg-cyan-500/10 px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-cyan-100">
+                            {simulationSlowdownLabel}
+                          </div>
+                        </div>
+                        <label className="mt-3 block text-xs text-gray-300">
+                          <span className="mb-1 block">Slowdown Factor: {simulationSlowdownFactor}x</span>
+                          <input
+                            type="range"
+                            min="1"
+                            max="100"
+                            value={simulationSlowdownFactor}
+                            onChange={(event) => {
+                              void applySimulationSettingsMutation({ slowdown_factor: Number(event.target.value) })
+                            }}
+                            className="w-full"
+                          />
+                        </label>
                       </div>
                     </div>
                   </div>
@@ -1220,6 +1365,7 @@ function App() {
               {swarmState ? (
                 <SwarmCanvas
                   state={swarmState}
+                  communicationPlayback={communicationPlayback}
                   selectedDrone={selectedDrone}
                   selectedMapEntity={selectedMapEntity}
                   mapMode={mapMode}
