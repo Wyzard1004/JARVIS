@@ -11,6 +11,15 @@
  * with Euclidean distance for transmission ranges.
  */
 
+import { getMapSymbolDescriptor } from './natoSymbols'
+import {
+  doesAnyFootprintBlockSegment,
+  getFootprintCenter,
+  getStructureFootprint,
+  normalizeRectFootprint,
+  pointInRect
+} from './mapGeometry'
+
 /**
  * Base Entity Class
  * All entities inherit from this base
@@ -32,6 +41,12 @@ export class Entity {
     this.transmissionRange = options.transmissionRange || 0 // Euclidean distance in 1000×1000 space
     this.detectionRadius = options.detectionRadius || 0
     this.revealed = options.revealed !== false // For hidden entities
+    this.symbolKey = options.symbolKey || null
+    this.symbolUrl = options.symbolUrl || null
+    this.atakSymbolUrl = options.atakSymbolUrl || null
+    this.symbolScale = options.symbolScale || 0
+    this.atakBadge = options.atakBadge !== false
+    this.footprint = options.footprint ? normalizeRectFootprint(options.footprint) : null
   }
 
   /**
@@ -67,6 +82,10 @@ export class Entity {
    */
   blocksLineOfSight(x1, y1, x2, y2) {
     if (!this.blocksLoS || this.status === 'destroyed') return false
+
+    if (this.footprint) {
+      return doesAnyFootprintBlockSegment([x1, y1], [x2, y2], [this.footprint])
+    }
     
     // Get entity center in coordinate space
     const entityX = this.position[0]
@@ -119,6 +138,13 @@ export class Entity {
       Math.floor(this.position[1] / SCALE)
     ]
   }
+
+  containsPoint(point) {
+    if (this.footprint) {
+      return pointInRect(point, this.footprint)
+    }
+    return this.distanceTo(point) <= this.getBlockingRadius()
+  }
 }
 
 /**
@@ -128,6 +154,11 @@ export class Entity {
  */
 export class Drone extends Entity {
   constructor(id, droneType, position, options = {}) {
+    const defaultSymbol = getMapSymbolDescriptor({
+      type: 'drone',
+      droneType,
+      ...options
+    })
     const defaultShape = {
       soldier: 'square',
       compute: 'diamond',
@@ -159,7 +190,12 @@ export class Drone extends Entity {
       shape: options.shape ?? defaultShape,
       color: options.color ?? defaultColor,
       renderSize: options.renderSize ?? defaultRenderSize,
-      transmissionRange: options.transmissionRange ?? defaultTransmissionRange
+      transmissionRange: options.transmissionRange ?? defaultTransmissionRange,
+      symbolKey: options.symbolKey ?? defaultSymbol?.key ?? null,
+      symbolUrl: options.symbolUrl ?? defaultSymbol?.url ?? null,
+      atakSymbolUrl: options.atakSymbolUrl ?? defaultSymbol?.atakIconUrl ?? null,
+      symbolScale: options.symbolScale ?? defaultSymbol?.canvasScale ?? 0,
+      atakBadge: options.atakBadge ?? defaultSymbol?.atakBadge ?? true
     })
     this.droneType = droneType
     this.behavior = options.behavior || 'lurk'
@@ -171,6 +207,11 @@ export class Drone extends Entity {
  */
 export class Enemy extends Entity {
   constructor(id, enemyType, position, options = {}) {
+    const defaultSymbol = getMapSymbolDescriptor({
+      type: 'enemy',
+      enemyType,
+      ...options
+    })
     const defaultShape = {
       infantry: 'circle',
       tank: 'square',
@@ -196,7 +237,12 @@ export class Enemy extends Entity {
       shape: options.shape ?? defaultShape,
       color: options.color ?? defaultColor,
       renderSize: options.renderSize ?? defaultRenderSize,
-      revealed: options.revealed !== undefined ? options.revealed : false
+      revealed: options.revealed !== undefined ? options.revealed : false,
+      symbolKey: options.symbolKey ?? defaultSymbol?.key ?? null,
+      symbolUrl: options.symbolUrl ?? defaultSymbol?.url ?? null,
+      atakSymbolUrl: options.atakSymbolUrl ?? defaultSymbol?.atakIconUrl ?? null,
+      symbolScale: options.symbolScale ?? defaultSymbol?.canvasScale ?? 0,
+      atakBadge: options.atakBadge ?? defaultSymbol?.atakBadge ?? true
     })
     this.enemyType = enemyType
   }
@@ -207,6 +253,11 @@ export class Enemy extends Entity {
  */
 export class Structure extends Entity {
   constructor(id, structureType, position, options = {}) {
+    const defaultSymbol = getMapSymbolDescriptor({
+      type: 'structure',
+      structureType,
+      ...options
+    })
     const defaultShape = {
       'building': 'rectangle',
       'warehouse': 'rectangle',
@@ -227,9 +278,25 @@ export class Structure extends Entity {
       shape: options.shape ?? defaultShape,
       color: options.color ?? defaultColor,
       size: options.size || 0.8,
-      renderSize: options.renderSize || 18
+      renderSize: options.renderSize || 18,
+      footprint: options.footprint || getStructureFootprint({
+        ...options,
+        subtype: structureType,
+        position
+      }),
+      symbolKey: options.symbolKey ?? defaultSymbol?.key ?? null,
+      symbolUrl: options.symbolUrl ?? defaultSymbol?.url ?? null,
+      atakSymbolUrl: options.atakSymbolUrl ?? defaultSymbol?.atakIconUrl ?? null,
+      symbolScale: options.symbolScale ?? defaultSymbol?.canvasScale ?? 0,
+      atakBadge: options.atakBadge ?? defaultSymbol?.atakBadge ?? false
     })
     this.structureType = structureType
+    if (this.footprint) {
+      const center = getFootprintCenter(this.footprint)
+      if (center) {
+        this.position = center
+      }
+    }
   }
 
   /**
@@ -249,6 +316,11 @@ export class Structure extends Entity {
  */
 export class PointOfInterest extends Entity {
   constructor(id, poiType, position, options = {}) {
+    const defaultSymbol = getMapSymbolDescriptor({
+      type: 'poi',
+      poiType,
+      ...options
+    })
     const defaultShape = {
       'downed_aircraft': 'triangle',
       'cache': 'square',
@@ -269,7 +341,12 @@ export class PointOfInterest extends Entity {
       shape: options.shape ?? defaultShape,
       color: options.color ?? defaultColor,
       renderSize: options.renderSize || 14,
-      revealed: options.revealed !== undefined ? options.revealed : false
+      revealed: options.revealed !== undefined ? options.revealed : false,
+      symbolKey: options.symbolKey ?? defaultSymbol?.key ?? null,
+      symbolUrl: options.symbolUrl ?? defaultSymbol?.url ?? null,
+      atakSymbolUrl: options.atakSymbolUrl ?? defaultSymbol?.atakIconUrl ?? null,
+      symbolScale: options.symbolScale ?? defaultSymbol?.canvasScale ?? 0,
+      atakBadge: options.atakBadge ?? defaultSymbol?.atakBadge ?? true
     })
     this.poiType = poiType
   }
@@ -306,6 +383,28 @@ export function stateToEntities(state) {
     if (typeof render.color === 'string' && render.color.length > 0) {
       options.color = render.color
     }
+    const renderSymbolKey = render.symbolKey || render.symbol_key
+    if (typeof renderSymbolKey === 'string' && renderSymbolKey.length > 0) {
+      options.symbolKey = renderSymbolKey
+    }
+    const renderSymbolUrl = render.symbolUrl || render.symbol_url
+    if (typeof renderSymbolUrl === 'string' && renderSymbolUrl.length > 0) {
+      options.symbolUrl = renderSymbolUrl
+    }
+    const renderAtakSymbolUrl = render.atakSymbolUrl || render.atak_symbol_url
+    if (typeof renderAtakSymbolUrl === 'string' && renderAtakSymbolUrl.length > 0) {
+      options.atakSymbolUrl = renderAtakSymbolUrl
+    }
+    const renderSymbolScale = render.symbolScale ?? render.symbol_scale
+    if (isFiniteNumber(renderSymbolScale)) {
+      options.symbolScale = Number(renderSymbolScale)
+    }
+    if (typeof render.atakBadge === 'boolean') {
+      options.atakBadge = render.atakBadge
+    }
+    if (typeof render.atak_badge === 'boolean') {
+      options.atakBadge = render.atak_badge
+    }
 
     const renderSize = isFiniteNumber(render.radius)
       ? Number(render.radius)
@@ -322,6 +421,8 @@ export function stateToEntities(state) {
 
     return options
   }
+
+  const resolveFootprint = (entity) => normalizeRectFootprint(entity?.footprint)
 
   // Add drones from Phase 4 format
   if (state.nodes && state.nodes.length > 0) {
@@ -395,6 +496,7 @@ export function stateToEntities(state) {
           label: struct.label,
           status: struct.status,
           size: isFiniteNumber(struct.blocking_size) ? Number(struct.blocking_size) : undefined,
+          footprint: resolveFootprint(struct),
           ...render
         }
       ))

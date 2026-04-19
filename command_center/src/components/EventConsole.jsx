@@ -23,11 +23,17 @@ const SEVERITY_BADGE = {
 }
 
 function EventConsole({ events = [], maxVisible = 20 }) {
-  const consoleEndRef = useRef(null)
+  const scrollContainerRef = useRef(null)
 
-  // Auto-scroll to bottom when new events arrive
+  // Auto-scroll the console panel itself instead of the whole page.
   useEffect(() => {
-    consoleEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+    const container = scrollContainerRef.current
+    if (!container) return
+
+    container.scrollTo({
+      top: container.scrollHeight,
+      behavior: 'smooth'
+    })
   }, [events])
 
   // Format timestamp to HH:MM:SS.mmm
@@ -60,7 +66,7 @@ function EventConsole({ events = [], maxVisible = 20 }) {
       </div>
 
       {/* Event List */}
-      <div className="overflow-y-auto h-80 font-mono text-xs">
+      <div ref={scrollContainerRef} className="overflow-y-auto min-h-[16rem] max-h-[26rem] font-mono text-xs">
         {visibleEvents.length === 0 ? (
           <div className="p-4 text-gray-400 text-center">
             No events yet...
@@ -92,7 +98,6 @@ function EventConsole({ events = [], maxVisible = 20 }) {
                 </div>
               </div>
             ))}
-            <div ref={consoleEndRef} />
           </div>
         )}
       </div>

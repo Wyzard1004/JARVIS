@@ -1,0 +1,714 @@
+{
+  "scenario": "Village Reconnaissance Patrol",
+  "timestamp_ms": 0,
+  "coordinate_space_size": 1000,
+  "map_overlay": {
+    "asset_url": "/scenario-assets/overlay-dbe5e733903b46c8898ab5ce3d402c35.png",
+    "asset_path": "scenario_assets/overlay-dbe5e733903b46c8898ab5ce3d402c35.png",
+    "opacity": 0.43,
+    "visible": true
+  },
+  "drones": [
+    {
+      "id": "soldier-1",
+      "label": "Soldier Operator 1",
+      "type": "soldier",
+      "role": "operator-node",
+      "behavior": "lurk",
+      "transmission_range": 190.0,
+      "render": {
+        "shape": "square",
+        "color": "#8B5CF6",
+        "radius": 14
+      },
+      "position": [
+        90.0,
+        90.0
+      ]
+    },
+    {
+      "id": "soldier-2",
+      "label": "Soldier Operator 2",
+      "type": "soldier",
+      "role": "operator-node",
+      "behavior": "lurk",
+      "transmission_range": 190.0,
+      "render": {
+        "shape": "square",
+        "color": "#8B5CF6",
+        "radius": 14
+      },
+      "position": [
+        170.0,
+        150.0
+      ]
+    },
+    {
+      "id": "compute-1",
+      "label": "Compute Drone 1",
+      "type": "compute",
+      "role": "compute-drone",
+      "behavior": "lurk",
+      "transmission_range": 420.0,
+      "render": {
+        "shape": "diamond",
+        "color": "#1E3A8A",
+        "radius": 16
+      },
+      "position": [
+        500.0,
+        500.0
+      ]
+    },
+    {
+      "id": "compute-2",
+      "label": "Compute Drone 2",
+      "type": "compute",
+      "role": "compute-drone",
+      "behavior": "lurk",
+      "transmission_range": 420.0,
+      "render": {
+        "shape": "diamond",
+        "color": "#1E3A8A",
+        "radius": 16
+      },
+      "position": [
+        560.0,
+        460.0
+      ]
+    },
+    {
+      "id": "recon-1",
+      "label": "Recon Drone 1",
+      "type": "recon",
+      "role": "recon-drone",
+      "behavior": "patrol",
+      "transmission_range": 170.0,
+      "detection_radius": 220,
+      "waypoints": [
+        [
+          190,
+          190
+        ],
+        [
+          420,
+          180
+        ],
+        [
+          430,
+          410
+        ],
+        [
+          210,
+          420
+        ],
+        [
+          190,
+          190
+        ]
+      ],
+      "render": {
+        "shape": "triangle",
+        "color": "#7DD3FC",
+        "radius": 13
+      },
+      "position": [
+        190.0,
+        190.0
+      ]
+    },
+    {
+      "id": "recon-2",
+      "label": "Recon Drone 2",
+      "type": "recon",
+      "role": "recon-drone",
+      "behavior": "patrol",
+      "transmission_range": 170.0,
+      "detection_radius": 220,
+      "waypoints": [
+        [
+          220,
+          780
+        ],
+        [
+          780,
+          780
+        ],
+        [
+          780,
+          520
+        ],
+        [
+          260,
+          520
+        ],
+        [
+          220,
+          780
+        ]
+      ],
+      "render": {
+        "shape": "triangle",
+        "color": "#7DD3FC",
+        "radius": 13
+      },
+      "position": [
+        220.0,
+        780.0
+      ]
+    },
+    {
+      "id": "recon-3",
+      "label": "Recon Drone 3",
+      "type": "recon",
+      "role": "recon-drone",
+      "behavior": "lurk",
+      "transmission_range": 170.0,
+      "detection_radius": 200,
+      "render": {
+        "shape": "triangle",
+        "color": "#7DD3FC",
+        "radius": 13
+      },
+      "position": [
+        760.0,
+        320.0
+      ]
+    },
+    {
+      "id": "attack-1",
+      "label": "Attack Drone 1",
+      "type": "attack",
+      "role": "attack-drone",
+      "behavior": "lurk",
+      "transmission_range": 160.0,
+      "render": {
+        "shape": "star",
+        "color": "#7DD3FC",
+        "radius": 15
+      },
+      "position": [
+        920.0,
+        100.0
+      ]
+    },
+    {
+      "id": "attack-2",
+      "label": "Attack Drone 2",
+      "type": "attack",
+      "role": "attack-drone",
+      "behavior": "lurk",
+      "transmission_range": 160.0,
+      "render": {
+        "shape": "star",
+        "color": "#7DD3FC",
+        "radius": 15
+      },
+      "position": [
+        900.0,
+        900.0
+      ]
+    },
+    {
+      "id": "attack-3",
+      "label": "Attack Drone 3",
+      "type": "attack",
+      "role": "attack-drone",
+      "behavior": "lurk",
+      "transmission_range": 160.0,
+      "render": {
+        "shape": "star",
+        "color": "#7DD3FC",
+        "radius": 15
+      },
+      "position": [
+        110.0,
+        900.0
+      ]
+    }
+  ],
+  "enemies": [
+    {
+      "id": "enemy-infantry-1776564445472-33",
+      "label": "Enemy Infantry 1",
+      "subtype": "infantry",
+      "status": "active",
+      "position": [
+        662.0550345111367,
+        663.6589505025094
+      ],
+      "revealed": false
+    },
+    {
+      "id": "enemy-infantry-1776564446149-34",
+      "label": "Enemy Infantry 2",
+      "subtype": "infantry",
+      "status": "active",
+      "position": [
+        719.0086667900844,
+        667.6324503311258
+      ],
+      "revealed": false
+    },
+    {
+      "id": "enemy-infantry-1776564447141-35",
+      "label": "Enemy Infantry 3",
+      "subtype": "infantry",
+      "status": "active",
+      "position": [
+        805.7636740981349,
+        643.7914008336352
+      ],
+      "revealed": false
+    },
+    {
+      "id": "enemy-infantry-1776564448441-36",
+      "label": "Enemy Infantry 4",
+      "subtype": "infantry",
+      "status": "active",
+      "position": [
+        494.50539595243947,
+        659.0232091234219
+      ],
+      "revealed": false
+    },
+    {
+      "id": "enemy-vehicle-1776564484059-39",
+      "label": "Enemy Vehicle 5",
+      "subtype": "vehicle",
+      "status": "active",
+      "position": [
+        756.626544063091,
+        968.9759673884006
+      ],
+      "revealed": false
+    },
+    {
+      "id": "enemy-vehicle-1776564484569-40",
+      "label": "Enemy Vehicle 6",
+      "subtype": "vehicle",
+      "status": "active",
+      "position": [
+        646.3856011610947,
+        961.1446051750572
+      ],
+      "revealed": false
+    },
+    {
+      "id": "enemy-vehicle-1776564485434-41",
+      "label": "Enemy Vehicle 7",
+      "subtype": "vehicle",
+      "status": "active",
+      "position": [
+        562.650632286543,
+        967.7711113209756
+      ],
+      "revealed": false
+    },
+    {
+      "id": "enemy-tank-1776564492999-42",
+      "label": "Enemy Tank 8",
+      "subtype": "tank",
+      "status": "active",
+      "position": [
+        968.6747912887167,
+        585.2409757635457
+      ],
+      "revealed": false
+    },
+    {
+      "id": "enemy-tank-1776564493984-43",
+      "label": "Enemy Tank 9",
+      "subtype": "tank",
+      "status": "active",
+      "position": [
+        878.9157443019592,
+        585.8434037972582
+      ],
+      "revealed": false
+    },
+    {
+      "id": "enemy-tank-1776564496376-44",
+      "label": "Enemy Tank 10",
+      "subtype": "tank",
+      "status": "active",
+      "position": [
+        782.5302417255124,
+        582.8313584216264
+      ],
+      "revealed": false
+    }
+  ],
+  "structures": [
+    {
+      "id": "structure-building-1776564379806-21",
+      "label": "Building 1",
+      "subtype": "building",
+      "status": "intact",
+      "blocking_size": 0.65,
+      "position": [
+        526.88,
+        385.96
+      ],
+      "footprint": {
+        "kind": "rect",
+        "x": 503.84,
+        "y": 359.37,
+        "width": 46.09,
+        "height": 53.18
+      },
+      "render": {
+        "shape": "rectangle",
+        "size": 18,
+        "color": "#8B7355",
+        "opacity": 0.48
+      }
+    },
+    {
+      "id": "structure-building-1776564383356-22",
+      "label": "Building 2",
+      "subtype": "building",
+      "status": "intact",
+      "blocking_size": 0.65,
+      "position": [
+        183.01,
+        434.05
+      ],
+      "footprint": {
+        "kind": "rect",
+        "x": 158.64,
+        "y": 408.12,
+        "width": 48.74,
+        "height": 51.85
+      },
+      "render": {
+        "shape": "rectangle",
+        "size": 18,
+        "color": "#8B7355",
+        "opacity": 0.48
+      }
+    },
+    {
+      "id": "structure-building-1776564387182-23",
+      "label": "Building 3",
+      "subtype": "building",
+      "status": "intact",
+      "blocking_size": 2.14,
+      "position": [
+        171.5,
+        641.43
+      ],
+      "footprint": {
+        "kind": "rect",
+        "x": 64.7,
+        "y": 596.45,
+        "width": 213.59,
+        "height": 89.96
+      },
+      "render": {
+        "shape": "rectangle",
+        "size": 53,
+        "color": "#8B7355",
+        "opacity": 0.48
+      }
+    },
+    {
+      "id": "structure-building-1776564390337-24",
+      "label": "Building 4",
+      "subtype": "building",
+      "status": "intact",
+      "blocking_size": 0.81,
+      "position": [
+        85.75,
+        714.76
+      ],
+      "footprint": {
+        "kind": "rect",
+        "x": 45.2,
+        "y": 687.29,
+        "width": 81.09,
+        "height": 54.95
+      },
+      "render": {
+        "shape": "rectangle",
+        "size": 20,
+        "color": "#8B7355",
+        "opacity": 0.48
+      }
+    },
+    {
+      "id": "structure-building-1776564393267-25",
+      "label": "Building 5",
+      "subtype": "building",
+      "status": "intact",
+      "blocking_size": 0.98,
+      "position": [
+        323.71,
+        700.37
+      ],
+      "footprint": {
+        "kind": "rect",
+        "x": 274.74,
+        "y": 654.5,
+        "width": 97.93,
+        "height": 91.73
+      },
+      "render": {
+        "shape": "rectangle",
+        "size": 24,
+        "color": "#8B7355",
+        "opacity": 0.48
+      }
+    },
+    {
+      "id": "structure-building-1776564395767-26",
+      "label": "Building 6",
+      "subtype": "building",
+      "status": "intact",
+      "blocking_size": 0.87,
+      "position": [
+        391.95,
+        652.28
+      ],
+      "footprint": {
+        "kind": "rect",
+        "x": 373.12,
+        "y": 608.86,
+        "width": 37.67,
+        "height": 86.85
+      },
+      "render": {
+        "shape": "rectangle",
+        "size": 22,
+        "color": "#8B7355",
+        "opacity": 0.48
+      }
+    },
+    {
+      "id": "structure-building-1776564398737-27",
+      "label": "Building 7",
+      "subtype": "building",
+      "status": "intact",
+      "blocking_size": 0.73,
+      "position": [
+        494.32,
+        652.07
+      ],
+      "footprint": {
+        "kind": "rect",
+        "x": 459.97,
+        "y": 615.51,
+        "width": 68.69,
+        "height": 73.12
+      },
+      "render": {
+        "shape": "rectangle",
+        "size": 18,
+        "color": "#8B7355",
+        "opacity": 0.48
+      }
+    },
+    {
+      "id": "structure-building-1776564401933-28",
+      "label": "Building 8",
+      "subtype": "building",
+      "status": "intact",
+      "blocking_size": 0.75,
+      "position": [
+        656.06,
+        659.6
+      ],
+      "footprint": {
+        "kind": "rect",
+        "x": 623.05,
+        "y": 622.15,
+        "width": 66.03,
+        "height": 74.89
+      },
+      "render": {
+        "shape": "rectangle",
+        "size": 19,
+        "color": "#8B7355",
+        "opacity": 0.48
+      }
+    },
+    {
+      "id": "structure-building-1776564405325-29",
+      "label": "Building 9",
+      "subtype": "building",
+      "status": "intact",
+      "blocking_size": 0.68,
+      "position": [
+        812.7,
+        653.61
+      ],
+      "footprint": {
+        "kind": "rect",
+        "x": 783.9,
+        "y": 619.49,
+        "width": 57.61,
+        "height": 68.24
+      },
+      "render": {
+        "shape": "rectangle",
+        "size": 18,
+        "color": "#8B7355",
+        "opacity": 0.48
+      }
+    },
+    {
+      "id": "structure-building-1776564411000-30",
+      "label": "Building 10",
+      "subtype": "building",
+      "status": "intact",
+      "blocking_size": 1.8,
+      "position": [
+        386.41,
+        379.31
+      ],
+      "footprint": {
+        "kind": "rect",
+        "x": 296.46,
+        "y": 348.74,
+        "width": 179.91,
+        "height": 61.15
+      },
+      "render": {
+        "shape": "rectangle",
+        "size": 45,
+        "color": "#8B7355",
+        "opacity": 0.48
+      }
+    },
+    {
+      "id": "structure-building-1776564413339-31",
+      "label": "Building 11",
+      "subtype": "building",
+      "status": "intact",
+      "blocking_size": 0.68,
+      "position": [
+        337.0,
+        448.67
+      ],
+      "footprint": {
+        "kind": "rect",
+        "x": 303.1,
+        "y": 416.54,
+        "width": 67.8,
+        "height": 64.25
+      },
+      "render": {
+        "shape": "rectangle",
+        "size": 18,
+        "color": "#8B7355",
+        "opacity": 0.48
+      }
+    },
+    {
+      "id": "structure-building-1776564416705-32",
+      "label": "Building 12",
+      "subtype": "building",
+      "status": "intact",
+      "blocking_size": 1.38,
+      "position": [
+        66.03,
+        396.82
+      ],
+      "footprint": {
+        "kind": "rect",
+        "x": 19.94,
+        "y": 327.91,
+        "width": 92.17,
+        "height": 137.81
+      },
+      "render": {
+        "shape": "rectangle",
+        "size": 34,
+        "color": "#8B7355",
+        "opacity": 0.48
+      }
+    },
+    {
+      "id": "structure-building-1776564457114-37",
+      "label": "Building 13",
+      "subtype": "building",
+      "status": "intact",
+      "blocking_size": 0.85,
+      "position": [
+        970.61,
+        407.01
+      ],
+      "footprint": {
+        "kind": "rect",
+        "x": 941.22,
+        "y": 364.69,
+        "width": 58.78,
+        "height": 84.64
+      },
+      "render": {
+        "shape": "rectangle",
+        "size": 21,
+        "color": "#8B7355",
+        "opacity": 0.48
+      }
+    },
+    {
+      "id": "structure-building-1776564465773-38",
+      "label": "Building 14",
+      "subtype": "building",
+      "status": "intact",
+      "blocking_size": 0.68,
+      "position": [
+        449.56,
+        443.57
+      ],
+      "footprint": {
+        "kind": "rect",
+        "x": 419.65,
+        "y": 409.45,
+        "width": 59.82,
+        "height": 68.24
+      },
+      "render": {
+        "shape": "rectangle",
+        "size": 18,
+        "color": "#8B7355",
+        "opacity": 0.48
+      }
+    }
+  ],
+  "special_entities": [],
+  "transmission_graph": [],
+  "initial_events": [
+    {
+      "timestamp_ms": 0,
+      "event_type": "drone_spawned",
+      "drone_id": "soldier-1",
+      "message": "soldier-1 staged in Alpha-1",
+      "position": [
+        90,
+        90
+      ]
+    },
+    {
+      "timestamp_ms": 100,
+      "event_type": "drone_spawned",
+      "drone_id": "compute-1",
+      "message": "compute-1 established relay in Echo-5",
+      "position": [
+        500,
+        500
+      ]
+    },
+    {
+      "timestamp_ms": 200,
+      "event_type": "patrol_started",
+      "drone_id": "recon-1",
+      "message": "recon-1 began patrol through Bravo-2 and Delta-4 sectors",
+      "position": [
+        190,
+        190
+      ]
+    }
+  ]
+}

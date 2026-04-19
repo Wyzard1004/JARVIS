@@ -13,6 +13,7 @@ function StatusPanel({ connectionStatus, swarmState }) {
     error: 'text-yellow-400'
   }
   const totalNodes = swarmState?.nodes?.length || swarmState?.data?.nodes?.length || 0
+  const activeScenario = swarmState?.scenario_info?.name
 
   return (
     <div className="bg-gray-800 rounded border border-gray-700 p-4">
@@ -40,6 +41,13 @@ function StatusPanel({ connectionStatus, swarmState }) {
           <div>
             <p className="text-gray-400 text-sm">Status</p>
             <p className="font-mono text-purple-400">{swarmState.status}</p>
+          </div>
+        )}
+
+        {activeScenario && (
+          <div>
+            <p className="text-gray-400 text-sm">Scenario</p>
+            <p className="font-mono text-cyan-400">{activeScenario}</p>
           </div>
         )}
       </div>

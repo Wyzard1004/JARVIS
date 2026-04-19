@@ -2,90 +2,64 @@
  * GridLegend Component
  * 
  * Reference chart for:
- * - Drone types and colors
- * - Entity types (enemies, structures)
+ * - NATO unit symbology
+ * - Non-unit map markers
  */
 
 import React from 'react'
+import { MAP_MARKER_LEGEND_ITEMS, NATO_UNIT_LEGEND_ITEMS } from '../lib/natoSymbols'
 
-const DRONE_TYPES = [
-  { type: 'soldier', label: 'Soldier Operator', color: '#8B5CF6', symbol: 'square', range: '190u / 1.5 sectors' },
-  { type: 'compute', label: 'Compute Drone', color: '#1E3A8A', symbol: 'diamond', range: '420u / 3.4 sectors' },
-  { type: 'recon', label: 'Recon Drone', color: '#7DD3FC', symbol: 'triangle', range: '170u / 1.4 sectors' },
-  { type: 'attack', label: 'Attack Drone', color: '#7DD3FC', symbol: 'star', range: '160u / 1.3 sectors' }
-]
-
-const ENTITY_TYPES = [
-  { name: 'Enemy Tank', color: '#FF4500', shape: 'square' },
-  { name: 'Enemy Infantry', color: '#FF6B6B', shape: 'circle' },
-  { name: 'Enemy Vehicle', color: '#F97316', shape: 'diamond' },
-  { name: 'Building/Structure', color: '#8B7355', shape: 'square' },
-  { name: 'Downed Aircraft', color: '#FFD93D', shape: 'triangle' },
-  { name: 'Supply Cache', color: '#F59E0B', shape: 'square' }
-]
-
-function GridLegend({ activeDrones = [] }) {
-  // Helper to render drone symbol shape
-  const renderDroneSymbol = (symbol, color) => {
-    switch (symbol) {
-      case 'square':
-        return (
-          <div
-            className="w-5 h-5 border border-gray-400"
-            style={{ backgroundColor: color }}
+function GridLegend({ activeDrones = [], mapMode = 'nato' }) {
+  const renderUnitPreview = (symbol) => {
+    if (mapMode === 'atak') {
+      return (
+        <div
+          className="flex h-10 w-10 items-center justify-center rounded-full border"
+          style={{
+            borderColor: `${symbol.badgeColor}AA`,
+            backgroundColor: `${symbol.badgeColor}33`
+          }}
+        >
+          <img
+            src={symbol.atakIconUrl || symbol.url}
+            alt=""
+            className="max-h-7 max-w-5 object-contain"
+            draggable="false"
           />
-        )
-      case 'diamond':
-        return (
-          <div
-            className="w-5 h-5 border border-gray-400"
-            style={{
-              backgroundColor: color,
-              transform: 'rotate(45deg)'
-            }}
-          />
-        )
-      case 'triangle':
-        return (
-          <div
-            className="w-0 h-0"
-            style={{
-              borderLeft: '2.5px solid transparent',
-              borderRight: '2.5px solid transparent',
-              borderBottom: '5px solid ' + color
-            }}
-          />
-        )
-      case 'star':
-        return (
-          <div
-            className="text-lg"
-            style={{ color: color }}
-          >
-            ★
-          </div>
-        )
-      default:
-        return (
-          <div
-            className="w-4 h-4 rounded-full border border-gray-400"
-            style={{ backgroundColor: color }}
-          />
-        )
+        </div>
+      )
     }
+
+    return (
+      <div className="flex h-10 w-10 items-center justify-center rounded border border-gray-600 bg-gray-800/70">
+        <img
+          src={symbol.url}
+          alt=""
+          className="max-h-9 max-w-7 object-contain"
+          draggable="false"
+        />
+      </div>
+    )
   }
 
   return (
     <div className="w-full space-y-4 p-4 bg-gray-700 border border-gray-600 rounded">
-      {/* Drone Types & Colors */}
+      {/* Unit Symbology */}
       <div>
-        <h3 className="font-bold text-sm mb-2 text-gray-100">Drone Types & Transmission Range</h3>
+        <div className="mb-2">
+          <h3 className="font-bold text-sm text-gray-100">Unit Symbology</h3>
+          <p className="text-[11px] text-gray-400">
+            {mapMode === 'atak'
+              ? 'ATAK-inspired badges with inner symbols and labels'
+              : 'Full NATO symbols with semi-transparent label chips'}
+          </p>
+        </div>
         <div className="space-y-1.5">
-          {DRONE_TYPES.map((drone) => (
-            <div key={drone.type} className="flex items-center gap-3 text-xs">
-              {renderDroneSymbol(drone.symbol, drone.color)}
-              <span className="font-mono flex-1 text-gray-100">{drone.label}</span>
-              <span className="text-gray-400 text-xs">{drone.range}</span>
+          {NATO_UNIT_LEGEND_ITEMS.map((symbol) => (
+            <div key={symbol.key} className="flex items-center gap-3 text-xs">
+              {renderUnitPreview(symbol)}
+              <span className="font-mono flex-1 text-gray-100">{symbol.label}</span>
+              <span className="text-gray-400 text-xs">{symbol.range || symbol.legendNote}</span>
             </div>
           ))}
         </div>
@@ -95,37 +69,27 @@ function GridLegend({ activeDrones = [] }) {
 
       {/* Entity Types */}
       <div>
-        <h3 className="font-bold text-sm mb-2 text-gray-100">Entities (Enemy/Structure)</h3>
+        <h3 className="font-bold text-sm mb-2 text-gray-100">Non-Unit Map Markers</h3>
         <div className="space-y-1.5">
-          {ENTITY_TYPES.map((entity) => (
-            <div key={entity.name} className="flex items-center gap-3 text-xs">
-              {entity.shape === 'square' ? (
-                <div
-                  className="w-4 h-4 border border-gray-400"
-                  style={{ backgroundColor: entity.color }}
+          {MAP_MARKER_LEGEND_ITEMS.map((entity) => (
+            <div key={entity.key} className="flex items-center gap-3 text-xs">
+              <div className="flex h-10 w-10 items-center justify-center rounded border border-gray-600 bg-gray-800/70">
+                <img
+                  src={mapMode === 'atak' && entity.atakBadge !== false ? (entity.atakIconUrl || entity.url) : entity.url}
+                  alt=""
+                  className="max-h-8 max-w-8 object-contain"
+                  draggable="false"
                 />
-              ) : entity.shape === 'diamond' ? (
-                <div
-                  className="w-4 h-4 border border-gray-400"
-                  style={{
-                    backgroundColor: entity.color,
-                    transform: 'rotate(45deg)'
-                  }}
-                />
-              ) : entity.shape === 'triangle' ? (
-                <div
-                  className="w-0 h-0 border-l-2 border-r-2 border-b-4 border-l-transparent border-r-transparent"
-                  style={{ borderBottomColor: entity.color }}
-                />
-              ) : (
-                <div
-                  className="w-4 h-4 rounded-full border border-gray-400"
-                  style={{ backgroundColor: entity.color }}
-                />
-              )}
-              <span className="font-mono flex-1 text-gray-100">{entity.name}</span>
+              </div>
+              <span className="font-mono flex-1 text-gray-100">{entity.label}</span>
+              <span className="text-gray-400 text-xs">{entity.legendNote}</span>
             </div>
           ))}
+          {mapMode === 'atak' && (
+            <div className="rounded border border-gray-600 bg-gray-800/40 px-3 py-2 text-[11px] text-gray-400">
+              Buildings and fixed structures stay as direct SVG map objects in ATAK mode instead of circular badges.
+            </div>
+          )}
         </div>
       </div>
 
@@ -153,7 +117,7 @@ function GridLegend({ activeDrones = [] }) {
           </div>
           <div className="flex items-center gap-2">
             <span className="px-2 py-0.5 border border-sky-300 rounded text-sky-300">◎</span>
-            <span className="text-gray-300">Recon sensor radius reveals enemies and special entities</span>
+            <span className="text-gray-300">Recon visibility is ray-cast and blocked by building footprints</span>
           </div>
         </div>
       </div>

@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "generate:nato-symbols": "node ./scripts/generateNatoSymbols.mjs",
     "build": "vite build",
     "preview": "vite preview"
   },

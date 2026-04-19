@@ -29,7 +29,7 @@ function SoldierSelector({ activeSoldier, onSoldierChange, soldierStatus }) {
   }
 
   return (
-    <div className="soldier-selector bg-gray-900 border border-gray-700 rounded-lg p-4 mb-4">
+    <div className="soldier-selector w-full bg-gray-900 border border-gray-700 rounded-lg p-4">
       <div className="flex items-center justify-between mb-4">
         <h3 className="text-lg font-bold text-white">Soldier Control</h3>
         <button
@@ -41,7 +41,7 @@ function SoldierSelector({ activeSoldier, onSoldierChange, soldierStatus }) {
       </div>
 
       {/* Soldier Selection Buttons */}
-      <div className="flex gap-3 mb-4">
+      <div className="mb-4 flex flex-col gap-3 sm:flex-row">
         {soldiers.map(soldier => (
           <button
             key={soldier.id}
@@ -65,7 +65,7 @@ function SoldierSelector({ activeSoldier, onSoldierChange, soldierStatus }) {
       {/* Status Display */}
       {showStatus && soldierStatus && (
         <div className="bg-gray-800 border border-gray-600 rounded p-3 text-sm text-gray-300">
-          <div className="grid grid-cols-2 gap-2 mb-2">
+          <div className="mb-2 grid gap-2 sm:grid-cols-2">
             <div>
               <span className="text-gray-400">Status:</span>
               <span className={`ml-2 font-semibold ${getStatusColor(soldierStatus)}`}>

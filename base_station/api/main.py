@@ -12,13 +12,16 @@ This is the nervous system of JARVIS:
 import json
 import os
 import asyncio
+import re
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, Set
+from uuid import uuid4
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, File, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 import uvicorn
 
 from core.ai_bridge import create_confirmation_text, process_audio_command, process_voice_command
@@ -28,6 +31,12 @@ from core.compute_drone_controller import ComputeDroneController, ThreatLevel, A
 
 
 BASE_STATION_DIR = Path(__file__).resolve().parents[1]
+CONFIG_DIR = BASE_STATION_DIR / "config"
+DEFAULT_SCENARIO_FILE = CONFIG_DIR / "swarm_initial_state.json"
+SCENARIO_LIBRARY_DIR = CONFIG_DIR / "scenarios"
+SCENARIO_LIBRARY_DIR.mkdir(parents=True, exist_ok=True)
+SCENARIO_ASSET_DIR = BASE_STATION_DIR / "scenario_assets"
+SCENARIO_ASSET_DIR.mkdir(parents=True, exist_ok=True)
 load_dotenv(BASE_STATION_DIR / ".env")
 
 
@@ -44,6 +53,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.mount("/scenario-assets", StaticFiles(directory=SCENARIO_ASSET_DIR), name="scenario-assets")
 
 
 @app.on_event("startup")
@@ -90,6 +101,84 @@ class ConnectionManager:
 
 
 manager = ConnectionManager()
+
+
+def _scenario_key_for_path(path: Path) -> str:
+    return str(path.relative_to(CONFIG_DIR))
+
+
+def _read_scenario_summary(path: Path) -> Dict | None:
+    try:
+        with path.open("r", encoding="utf-8") as handle:
+            payload = json.load(handle)
+    except Exception:
+        return None
+
+    drones = payload.get("drones") or []
+    structures = payload.get("structures") or []
+    enemies = payload.get("enemies") or []
+    special_entities = payload.get("special_entities") or []
+    return {
+        "name": payload.get("scenario") or path.stem.replace("_", " ").title(),
+        "key": _scenario_key_for_path(path),
+        "path": str(path),
+        "node_count": len(drones),
+        "structure_count": len(structures),
+        "enemy_count": len(enemies),
+        "special_entity_count": len(special_entities),
+        "is_blank": len(drones) == 0 and len(structures) == 0 and len(enemies) == 0 and len(special_entities) == 0,
+    }
+
+
+def _list_available_scenarios() -> list[Dict]:
+    scenario_paths = [DEFAULT_SCENARIO_FILE]
+    scenario_paths.extend(sorted(path for path in SCENARIO_LIBRARY_DIR.glob("*.json") if path.is_file()))
+
+    summaries = []
+    seen_keys = set()
+    for path in scenario_paths:
+        if not path.exists():
+            continue
+        summary = _read_scenario_summary(path)
+        if not summary or summary["key"] in seen_keys:
+            continue
+        seen_keys.add(summary["key"])
+        summaries.append(summary)
+    return summaries
+
+
+def _resolve_scenario_path(relative_key: str | None) -> Path:
+    if not relative_key:
+        raise HTTPException(status_code=400, detail="scenario_key is required")
+
+    candidate = (CONFIG_DIR / relative_key).resolve()
+    try:
+        candidate.relative_to(CONFIG_DIR.resolve())
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Scenario path is outside the config directory") from exc
+
+    if not candidate.exists() or not candidate.is_file():
+        raise HTTPException(status_code=404, detail=f"Scenario not found: {relative_key}")
+    return candidate
+
+
+def _slugify_scenario_name(name: str) -> str:
+    slug = re.sub(r"[^a-z0-9]+", "_", name.strip().lower()).strip("_")
+    return slug or "scenario"
+
+
+def _next_scenario_library_path(scenario_name: str) -> Path:
+    slug = _slugify_scenario_name(scenario_name)
+    candidate = SCENARIO_LIBRARY_DIR / f"{slug}.json"
+    suffix = 2
+    while candidate.exists():
+        candidate = SCENARIO_LIBRARY_DIR / f"{slug}_{suffix}.json"
+        suffix += 1
+    return candidate
+
+
+def _default_saved_scenario_name() -> str:
+    return f"Custom Scenario {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
 
 # Initialize demo soldier controllers (can be puppeted by command center)
 demo_soldiers = {
@@ -379,6 +468,7 @@ def _build_lean_ui_event(consensus_result: Dict, transcribed_text: str, parsed_c
         "status": consensus_result.get("status", "propagating"),
         "message": "Command executing via swarm consensus protocol",
         "algorithm": consensus_result.get("algorithm"),
+        "scenario_info": consensus_result.get("scenario_info", {}),
         "target_location": consensus_result.get("target_location"),
         "target_x": consensus_result.get("target_x", 0),
         "target_y": consensus_result.get("target_y", 0),
@@ -393,6 +483,7 @@ def _build_lean_ui_event(consensus_result: Dict, transcribed_text: str, parsed_c
         "recon_status": sim_data.get("recon_status", {}),
         "operator_signals": sim_data.get("operator_signals", []),
         "signal_animations": signal_animations,
+        "map_overlay": consensus_result.get("map_overlay", {}),
         "structures": consensus_result.get("structures", []),
         "special_entities": consensus_result.get("special_entities", []),
         "events": consensus_result.get("events", []),
@@ -410,6 +501,7 @@ def _build_swarm_event(consensus_result: Dict, transcribed_text: str, parsed_com
         "status": consensus_result.get("status", "propagating"),
         "message": "Command executing via swarm consensus protocol",
         "algorithm": consensus_result.get("algorithm"),
+        "scenario_info": consensus_result.get("scenario_info", {}),
         "control_node": search_state.get("control_node"),
         "target_location": consensus_result.get("target_location"),
         "target_x": consensus_result.get("target_x", 0),
@@ -422,8 +514,41 @@ def _build_swarm_event(consensus_result: Dict, transcribed_text: str, parsed_com
         "transcribed_text": transcribed_text,
         "parsed_command": parsed_command,
         "confirmation_text": confirmation_text,
+        "map_overlay": consensus_result.get("map_overlay", {}),
+        "structures": consensus_result.get("structures", []),
+        "special_entities": consensus_result.get("special_entities", []),
+        "enemies": consensus_result.get("enemies", []),
         "timestamp": datetime.now().isoformat(),
     }
+
+
+def _build_state_snapshot_message(state: Dict, event_name: str = "state_update") -> Dict:
+    return {
+        "event": event_name,
+        "status": state.get("status", "idle"),
+        "algorithm": state.get("algorithm", "gossip"),
+        "scenario_info": state.get("scenario_info", {}),
+        "nodes": state.get("nodes", []),
+        "edges": state.get("edges", []),
+        "spanning_tree_root": state.get("spanning_tree_root"),
+        "spanning_tree_edges": state.get("spanning_tree_edges", []),
+        "drone_positions": state.get("drone_positions", {}),
+        "drone_behaviors": state.get("drone_behaviors", {}),
+        "active_gossip_messages": state.get("active_gossip_messages", []),
+        "active_nodes": _build_active_nodes(state),
+        "map_overlay": state.get("map_overlay", {}),
+        "enemies": state.get("enemies", []),
+        "structures": state.get("structures", []),
+        "special_entities": state.get("special_entities", []),
+        "events": state.get("events", []),
+        "timestamp": datetime.now().isoformat(),
+    }
+
+
+async def _broadcast_state_snapshot(swarm) -> Dict:
+    snapshot = _build_state_snapshot_message(swarm.get_state(), "state_update")
+    await manager.broadcast(snapshot)
+    return snapshot
 
 
 async def _dispatch_swarm_command(transcribed_text: str, swarm_intent: Dict, parsed_command: Dict | None = None) -> Dict:
@@ -513,21 +638,7 @@ async def websocket_swarm_endpoint(websocket: WebSocket):
         # Send initial complete swarm topology
         print("[WebSocket] Sending initial swarm topology...")
         initial_state = swarm.get_state()
-        initial_message = {
-            "event": "initial_state",
-            "nodes": initial_state.get("nodes", []),
-            "edges": initial_state.get("edges", []),
-            "spanning_tree_root": initial_state.get("spanning_tree_root"),
-            "spanning_tree_edges": initial_state.get("spanning_tree_edges", []),
-            "drone_positions": initial_state.get("drone_positions", {}),
-            "drone_behaviors": initial_state.get("drone_behaviors", {}),
-            "active_gossip_messages": initial_state.get("active_gossip_messages", []),
-            "enemies": initial_state.get("enemies", []),
-            "structures": initial_state.get("structures", []),
-            "special_entities": initial_state.get("special_entities", []),
-            "events": initial_state.get("events", []),
-            "timestamp": datetime.now().isoformat()
-        }
+        initial_message = _build_state_snapshot_message(initial_state, "initial_state")
         await websocket.send_json(initial_message)
         print("[WebSocket] Initial state sent")
         
@@ -536,25 +647,10 @@ async def websocket_swarm_endpoint(websocket: WebSocket):
             """Push state updates to client at regular interval."""
             while websocket in manager.active_connections:
                 try:
+                    swarm.advance_simulation()
                     current_state = swarm.get_state()
-                    
-                    # Build state update with all topology information
-                    state_update = {
-                        "event": "state_update",
-                        "nodes": current_state.get("nodes", []),
-                        "edges": current_state.get("edges", []),
-                        "spanning_tree_root": current_state.get("spanning_tree_root"),
-                        "spanning_tree_edges": current_state.get("spanning_tree_edges", []),
-                        "drone_positions": current_state.get("drone_positions", {}),
-                        "drone_behaviors": current_state.get("drone_behaviors", {}),
-                        "active_gossip_messages": current_state.get("active_gossip_messages", []),
-                        "enemies": current_state.get("enemies", []),
-                        "structures": current_state.get("structures", []),
-                        "special_entities": current_state.get("special_entities", []),
-                        "events": current_state.get("events", []),
-                        "timestamp": datetime.now().isoformat()
-                    }
-                    
+                    state_update = _build_state_snapshot_message(current_state, "state_update")
+
                     # Send update
                     await websocket.send_json(state_update)
                     
@@ -811,6 +907,7 @@ async def get_swarm_state():
     state = swarm.get_state()
 
     return {
+        "scenario_info": state.get("scenario_info", {}),
         "nodes": state.get("nodes", []),
         "edges": state.get("edges", []),
         "active_nodes": _build_active_nodes(state),
@@ -829,8 +926,98 @@ async def get_swarm_state():
         "object_reports": state.get("object_reports", []),
         "benchmark": state.get("benchmark", {}),
         "available_algorithms": state.get("available_algorithms", []),
+        "map_overlay": state.get("map_overlay", {}),
+        "enemies": state.get("enemies", []),
+        "structures": state.get("structures", []),
+        "special_entities": state.get("special_entities", []),
+        "events": state.get("events", []),
         "timestamp": state.get("timestamp", datetime.now().isoformat()),
     }
+
+
+@app.get("/api/scenarios")
+async def list_scenarios():
+    """List loadable scenarios and identify the current active one."""
+    swarm = get_swarm()
+    return {
+        "scenarios": _list_available_scenarios(),
+        "active_scenario": swarm.get_active_scenario_info(),
+    }
+
+
+@app.post("/api/scenarios/load")
+async def load_scenario(payload: Dict):
+    """Load a scenario from the config directory without restarting the server."""
+    scenario_path = _resolve_scenario_path(payload.get("scenario_key"))
+    swarm = get_swarm()
+    swarm.load_scenario(scenario_path)
+    snapshot = await _broadcast_state_snapshot(swarm)
+    snapshot["message"] = f"Scenario loaded: {swarm.get_active_scenario_info().get('name')}"
+    return snapshot
+
+
+@app.post("/api/map-editor/overlay")
+async def upload_map_overlay(file: UploadFile = File(...)):
+    """Upload and activate a map overlay image for the live editor."""
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="Overlay image filename is required")
+    if file.content_type and not file.content_type.startswith("image/"):
+        raise HTTPException(status_code=400, detail="Overlay upload must be an image")
+
+    suffix = Path(file.filename).suffix.lower() or ".png"
+    filename = f"overlay-{uuid4().hex}{suffix}"
+    output_path = SCENARIO_ASSET_DIR / filename
+
+    content = await file.read()
+    if not content:
+        raise HTTPException(status_code=400, detail="Overlay image is empty")
+
+    output_path.write_bytes(content)
+
+    swarm = get_swarm()
+    current_overlay = (swarm.get_state().get("map_overlay") or {})
+    overlay = {
+        "asset_path": f"scenario_assets/{filename}",
+        "asset_url": f"/scenario-assets/{filename}",
+        "opacity": current_overlay.get("opacity", 0.72),
+        "visible": True,
+    }
+    swarm.set_map_overlay(overlay)
+    return await _broadcast_state_snapshot(swarm)
+
+
+@app.put("/api/map-editor/state")
+async def update_map_editor_state(payload: Dict):
+    """Apply live scenario-editor changes without restarting the backend."""
+    swarm = get_swarm()
+    swarm.apply_editor_state(payload)
+    return await _broadcast_state_snapshot(swarm)
+
+
+@app.post("/api/map-editor/save")
+async def save_map_editor_state(payload: Dict | None = None):
+    """Persist the current editor-managed scenario state to disk."""
+    swarm = get_swarm()
+    payload = payload or {}
+    requested_name = str(payload.get("scenario_name") or "").strip()
+    active_info = swarm.get_active_scenario_info()
+    active_path = Path(active_info.get("path") or DEFAULT_SCENARIO_FILE)
+
+    message = None
+    if active_path.resolve() == DEFAULT_SCENARIO_FILE.resolve():
+        scenario_name = requested_name or _default_saved_scenario_name()
+        save_path = swarm.save_scenario(
+            target_path=_next_scenario_library_path(scenario_name),
+            scenario_name=scenario_name,
+        )
+        message = f"Scenario saved as {scenario_name}"
+    else:
+        save_path = swarm.save_scenario(scenario_name=requested_name or None)
+        message = f"Scenario saved to {save_path.name}"
+
+    snapshot = await _broadcast_state_snapshot(swarm)
+    snapshot["message"] = message
+    return snapshot
 
 
 # ============================================================================

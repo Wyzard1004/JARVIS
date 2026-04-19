@@ -1,0 +1,65 @@
+{
+  "sourceRoot": "/tmp/joint-military-symbology-xml",
+  "generatedAt": "2026-04-19T00:58:27.548Z",
+  "symbols": [
+    {
+      "key": "allied-soldier-operator",
+      "title": "Friendly Infantry / Operator",
+      "layers": [
+        "svg/Frames/0_310_0.svg",
+        "svg/Appendices/Land/10121100_1.svg"
+      ]
+    },
+    {
+      "key": "allied-compute-drone",
+      "title": "Friendly UAV / Airborne Command Relay",
+      "layers": [
+        "svg/Frames/0_301_0.svg",
+        "svg/Appendices/Air/01110300.svg",
+        "svg/Appendices/Air/mod1/01111.svg"
+      ]
+    },
+    {
+      "key": "allied-recon-drone",
+      "title": "Friendly UAV / Reconnaissance",
+      "layers": [
+        "svg/Frames/0_301_0.svg",
+        "svg/Appendices/Air/01110300.svg",
+        "svg/Appendices/Air/mod1/01181.svg"
+      ]
+    },
+    {
+      "key": "allied-attack-drone",
+      "title": "Friendly UAV / Attack",
+      "layers": [
+        "svg/Frames/0_301_0.svg",
+        "svg/Appendices/Air/01110300.svg",
+        "svg/Appendices/Air/mod1/01011.svg"
+      ]
+    },
+    {
+      "key": "hostile-infantry",
+      "title": "Hostile Infantry",
+      "layers": [
+        "svg/Frames/0_610_0.svg",
+        "svg/Appendices/Land/10121100_3.svg"
+      ]
+    },
+    {
+      "key": "hostile-tank",
+      "title": "Hostile Tank",
+      "layers": [
+        "svg/Frames/0_615_0.svg",
+        "svg/Appendices/Land/15120200.svg"
+      ]
+    },
+    {
+      "key": "hostile-vehicle",
+      "title": "Hostile Scout Vehicle",
+      "layers": [
+        "svg/Frames/0_615_0.svg",
+        "svg/Appendices/Land/15120110.svg"
+      ]
+    }
+  ]
+}

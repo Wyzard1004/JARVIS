@@ -11,6 +11,7 @@ from __future__ import annotations
 import heapq
 import itertools
 import json
+import time
 from copy import deepcopy
 from datetime import datetime
 from pathlib import Path
@@ -22,6 +23,13 @@ except ImportError:  # pragma: no cover
     nx = None
 
 from .continuous_coordinate_space import ContinuousCoordinateSpace
+from .map_geometry import (
+    clone_editor_entities,
+    footprint_center,
+    infer_structure_footprint,
+    normalize_overlay,
+    normalize_rect_footprint,
+)
 from .mission_event_bus import EventBus, EventSeverity, EventType, MissionEvent
 
 
@@ -68,22 +76,19 @@ class SwarmCoordinator:
         "low": {"rank": 0},
     }
 
+    CONFIG_DIR_NAME = "config"
+
     def __init__(self, seed: Optional[int] = None, config_path: Optional[str] = None):
         self._message_sequence = itertools.count(1)
         self.space = ContinuousCoordinateSpace()
         self.graph = nx.Graph() if nx is not None else SimpleGraph()
         self.event_bus = EventBus(max_history=1000)
 
-        self._config = self._load_config(config_path) if config_path else None
+        default_config = Path(__file__).parent.parent / "config" / "swarm_initial_state.json"
+        self._config_path = Path(config_path) if config_path else default_config
+        self._config = self._load_config(str(self._config_path)) if self._config_path else None
         if self._config is None:
-            default_config = Path(__file__).parent.parent / "config" / "swarm_initial_state.json"
-            self._config = self._load_config(str(default_config)) or self._build_default_config()
-
-        self._base_nodes = deepcopy(self._config.get("drones", []))
-        self._enemies = self._normalize_entities(self._config.get("enemies", []))
-        self._structures = self._normalize_entities(self._config.get("structures", []))
-        self._special_entities = self._normalize_entities(self._config.get("special_entities", []))
-        self._node_lookup = {node["id"]: deepcopy(node) for node in self._base_nodes}
+            self._config = self._build_default_config()
 
         self._drone_positions: Dict[str, Tuple[float, float]] = {}
         self._drone_behaviors: Dict[str, Dict] = {}
@@ -93,9 +98,15 @@ class SwarmCoordinator:
         self._spanning_tree_edges: Set[Tuple[str, str]] = set()
         self._spanning_tree_root: Optional[str] = None
         self._last_state: Dict = {}
+        self._last_simulation_clock: Optional[float] = None
+        self._base_nodes: List[Dict] = []
+        self._map_overlay: Dict = normalize_overlay(None)
+        self._enemies: List[Dict] = []
+        self._structures: List[Dict] = []
+        self._special_entities: List[Dict] = []
+        self._node_lookup: Dict[str, Dict] = {}
 
-        self._initialize_nodes()
-        self._seed_initial_events()
+        self._apply_config(self._config, self._config_path)
 
     def _load_config(self, config_path: str) -> Optional[Dict]:
         try:
@@ -108,12 +119,22 @@ class SwarmCoordinator:
         return {
             "scenario": "Default Continuous Scenario",
             "coordinate_space_size": 1000,
+            "map_overlay": normalize_overlay(None),
             "drones": [],
             "enemies": [],
             "structures": [],
             "special_entities": [],
             "initial_events": [],
         }
+
+    def _normalize_map_overlay(self, overlay: Dict | None) -> Dict:
+        normalized = normalize_overlay(overlay)
+        asset_path = normalized.get("asset_path")
+        if asset_path and not normalized.get("asset_url"):
+            normalized["asset_url"] = f"/scenario-assets/{Path(str(asset_path)).name}"
+        if normalized.get("asset_url") and overlay and "visible" not in overlay:
+            normalized["visible"] = True
+        return normalized
 
     def _normalize_position(self, point: Iterable[float] | None) -> Tuple[float, float]:
         if point is None:
@@ -130,14 +151,182 @@ class SwarmCoordinator:
             return self.DEFAULT_RANGE_BY_TYPE.get(node_type, 140.0)
         return float(value)
 
-    def _normalize_entities(self, entities: List[Dict]) -> List[Dict]:
+    def _normalize_entities(self, entities: List[Dict], entity_type: Optional[str] = None) -> List[Dict]:
         normalized = []
         for entity in entities:
             item = deepcopy(entity)
             if "position" in item:
                 item["position"] = list(self._normalize_position(item["position"]))
+            if entity_type == "structure":
+                footprint = normalize_rect_footprint(item.get("footprint"))
+                if footprint is None:
+                    footprint = infer_structure_footprint(item)
+                if footprint is not None:
+                    item["footprint"] = footprint
+                    center = footprint_center(footprint)
+                    if center is not None:
+                        item["position"] = [center[0], center[1]]
             normalized.append(item)
         return normalized
+
+    def _normalize_nodes(self, nodes: List[Dict]) -> List[Dict]:
+        normalized = []
+        for raw_node in nodes:
+            node = deepcopy(raw_node)
+            node_id = str(node.get("id") or "").strip()
+            if not node_id:
+                continue
+
+            for transient_key in ("status", "display_sector", "next_waypoint", "grid_position", "x", "y"):
+                node.pop(transient_key, None)
+
+            node_type = node.get("type", self._infer_node_type(node_id, node.get("role")))
+            position = self._normalize_position(node.get("position"))
+            waypoints = node.get("waypoints")
+
+            node["id"] = node_id
+            node["type"] = node_type
+            node["position"] = [position[0], position[1]]
+            node["transmission_range"] = self._normalize_range(node.get("transmission_range"), node_type)
+
+            if waypoints:
+                node["waypoints"] = [
+                    list(self._normalize_position(point))
+                    for point in waypoints
+                ]
+
+            if "speed" in node and node.get("speed") is not None:
+                node["speed"] = float(node["speed"])
+            if "detection_radius" in node and node.get("detection_radius") is not None:
+                node["detection_radius"] = float(node["detection_radius"])
+
+            normalized.append(node)
+
+        return normalized
+
+    def _rebuild_runtime_nodes(self) -> None:
+        self.graph = nx.Graph() if nx is not None else SimpleGraph()
+        self._node_lookup = {node["id"]: deepcopy(node) for node in self._base_nodes}
+        self._drone_positions = {}
+        self._drone_behaviors = {}
+        self._transmission_ranges = {}
+        self._gossip_messages = {}
+        self._transmission_graph_edges = []
+        self._spanning_tree_edges = set()
+        if self._spanning_tree_root not in self._node_lookup:
+            self._spanning_tree_root = None
+        self._last_state = {}
+        self._last_simulation_clock = None
+        self._initialize_nodes()
+
+    def _apply_config(self, config: Dict, config_path: Optional[Path] = None) -> None:
+        self._config = deepcopy(config or self._build_default_config())
+        if config_path is not None:
+            self._config_path = Path(config_path)
+
+        self.graph = nx.Graph() if nx is not None else SimpleGraph()
+        self.event_bus = EventBus(max_history=1000)
+        self._base_nodes = deepcopy(self._config.get("drones", []))
+        self._map_overlay = self._normalize_map_overlay(self._config.get("map_overlay"))
+        self._enemies = self._normalize_entities(self._config.get("enemies", []), entity_type="enemy")
+        self._structures = self._normalize_entities(self._config.get("structures", []), entity_type="structure")
+        self._special_entities = self._normalize_entities(self._config.get("special_entities", []), entity_type="special_entity")
+        self._node_lookup = {node["id"]: deepcopy(node) for node in self._base_nodes}
+        self._drone_positions = {}
+        self._drone_behaviors = {}
+        self._transmission_ranges = {}
+        self._gossip_messages = {}
+        self._transmission_graph_edges = []
+        self._spanning_tree_edges = set()
+        self._spanning_tree_root = None
+        self._last_state = {}
+        self._last_simulation_clock = None
+
+        self._initialize_nodes()
+        self._seed_initial_events()
+
+    def get_active_scenario_info(self) -> Dict:
+        config_root = self._config_path.parent.parent if self._config_path.parent.name == "scenarios" else self._config_path.parent
+        try:
+            relative_path = self._config_path.relative_to(config_root)
+        except ValueError:
+            relative_path = self._config_path.name
+
+        return {
+            "name": self._config.get("scenario") or self._config_path.stem.replace("_", " ").title(),
+            "path": str(self._config_path),
+            "relative_path": str(relative_path),
+            "is_blank": len(self._base_nodes) == 0 and len(self._structures) == 0 and len(self._enemies) == 0 and len(self._special_entities) == 0,
+            "node_count": len(self._base_nodes),
+            "structure_count": len(self._structures),
+            "enemy_count": len(self._enemies),
+            "special_entity_count": len(self._special_entities),
+        }
+
+    def _sync_config_snapshot(self) -> Dict:
+        self._config["coordinate_space_size"] = int(self.space.SPACE_SIZE)
+        self._config["map_overlay"] = deepcopy(self._map_overlay)
+        self._config["drones"] = deepcopy(self._base_nodes)
+        self._config["enemies"] = deepcopy(self._enemies)
+        self._config["structures"] = deepcopy(self._structures)
+        self._config["special_entities"] = deepcopy(self._special_entities)
+        self._config.setdefault("initial_events", [])
+        return deepcopy(self._config)
+
+    def apply_editor_state(self, payload: Dict | None) -> Dict:
+        payload = payload or {}
+
+        if "drones" in payload:
+            self._base_nodes = self._normalize_nodes(clone_editor_entities(payload.get("drones")))
+            self._rebuild_runtime_nodes()
+        if "map_overlay" in payload:
+            self._map_overlay = self._normalize_map_overlay(payload.get("map_overlay"))
+        if "structures" in payload:
+            self._structures = self._normalize_entities(clone_editor_entities(payload.get("structures")), entity_type="structure")
+        if "enemies" in payload:
+            self._enemies = self._normalize_entities(clone_editor_entities(payload.get("enemies")), entity_type="enemy")
+        if "special_entities" in payload:
+            self._special_entities = self._normalize_entities(clone_editor_entities(payload.get("special_entities")), entity_type="special_entity")
+
+        self._sync_config_snapshot()
+        return self.get_state()
+
+    def set_map_overlay(self, overlay: Dict | None) -> Dict:
+        self._map_overlay = self._normalize_map_overlay(overlay)
+        self._sync_config_snapshot()
+        return deepcopy(self._map_overlay)
+
+    def save_scenario(self, target_path: str | Path | None = None, scenario_name: str | None = None) -> Path:
+        if scenario_name:
+            self._config["scenario"] = str(scenario_name).strip()
+        if target_path is not None:
+            self._config_path = Path(target_path)
+        snapshot = self._sync_config_snapshot()
+        self._config_path.parent.mkdir(parents=True, exist_ok=True)
+        with self._config_path.open("w", encoding="utf-8") as handle:
+            json.dump(snapshot, handle, indent=2)
+            handle.write("\n")
+        return self._config_path
+
+    def load_scenario(self, config_path: str | Path) -> Dict:
+        next_path = Path(config_path)
+        config = self._load_config(str(next_path))
+        if config is None:
+            raise FileNotFoundError(f"Scenario config not found: {next_path}")
+        self._apply_config(config, next_path)
+        return self.get_state()
+
+
+    def advance_simulation(self, now_monotonic: Optional[float] = None) -> None:
+        current_time = now_monotonic if now_monotonic is not None else time.monotonic()
+        if self._last_simulation_clock is None:
+            self._last_simulation_clock = current_time
+            return
+
+        delta_ms = max(0.0, (current_time - self._last_simulation_clock) * 1000.0)
+        self._last_simulation_clock = current_time
+        if delta_ms > 0.0:
+            self.update_drone_positions(delta_ms)
 
     def _initialize_nodes(self) -> None:
         for node in self._base_nodes:
@@ -712,7 +901,9 @@ class SwarmCoordinator:
             "object_reports": [],
             "benchmark": benchmark,
             "available_algorithms": self.get_supported_algorithms(),
+            "scenario_info": self.get_active_scenario_info(),
             "timestamp": datetime.now().isoformat(),
+            "map_overlay": deepcopy(self._map_overlay),
             "enemies": deepcopy(self._enemies),
             "structures": deepcopy(self._structures),
             "special_entities": deepcopy(self._special_entities),
@@ -961,6 +1152,8 @@ class SwarmCoordinator:
         state["drone_behaviors"] = deepcopy(self._drone_behaviors)
         state["active_gossip_messages"] = self.get_active_gossip_messages()
         state["available_algorithms"] = self.get_supported_algorithms()
+        state["scenario_info"] = self.get_active_scenario_info()
+        state["map_overlay"] = deepcopy(self._map_overlay)
         state["enemies"] = deepcopy(self._enemies)
         state["structures"] = deepcopy(self._structures)
         state["special_entities"] = deepcopy(self._special_entities)
