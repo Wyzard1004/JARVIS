@@ -1,0 +1,1204 @@
+{
+  "scenario": "Zarichne",
+  "timestamp_ms": 0,
+  "coordinate_space_size": 1000,
+  "map_overlay": {
+    "asset_url": "/scenario-assets/overlay-7008682f140c41b0aa30346b2846d0da.png",
+    "asset_path": "scenario_assets/overlay-7008682f140c41b0aa30346b2846d0da.png",
+    "opacity": 0.72,
+    "visible": true
+  },
+  "drones": [
+    {
+      "id": "soldier-1",
+      "label": "Soldier Operator 1",
+      "type": "soldier",
+      "role": "operator-node",
+      "behavior": "lurk",
+      "position": [
+        188.56495553884562,
+        445.99581418961316
+      ],
+      "transmission_range": 190.0,
+      "render": {
+        "shape": "square",
+        "color": "#8B5CF6",
+        "radius": 14
+      }
+    },
+    {
+      "id": "soldier-2",
+      "label": "Soldier Operator 2",
+      "type": "soldier",
+      "role": "operator-node",
+      "behavior": "lurk",
+      "position": [
+        171.90457279487143,
+        640.6190740662662
+      ],
+      "transmission_range": 190.0,
+      "render": {
+        "shape": "square",
+        "color": "#8B5CF6",
+        "radius": 14
+      }
+    },
+    {
+      "id": "soldier-3",
+      "label": "Soldier Operator 3",
+      "type": "soldier",
+      "role": "operator-node",
+      "behavior": "lurk",
+      "position": [
+        233.2449602990561,
+        637.5898997797746
+      ],
+      "transmission_range": 190.0,
+      "render": {
+        "shape": "square",
+        "color": "#8B5CF6",
+        "radius": 14
+      }
+    },
+    {
+      "id": "soldier-4",
+      "label": "Soldier Operator 4",
+      "type": "soldier",
+      "role": "operator-node",
+      "behavior": "lurk",
+      "position": [
+        93.52518735745532,
+        616.764484542915
+      ],
+      "transmission_range": 190.0,
+      "render": {
+        "shape": "square",
+        "color": "#8B5CF6",
+        "radius": 14
+      }
+    },
+    {
+      "id": "soldier-5",
+      "label": "Soldier Operator 5",
+      "type": "soldier",
+      "role": "operator-node",
+      "behavior": "lurk",
+      "position": [
+        90.11737260446301,
+        722.4062742566746
+      ],
+      "transmission_range": 190.0,
+      "render": {
+        "shape": "square",
+        "color": "#8B5CF6",
+        "radius": 14
+      }
+    },
+    {
+      "id": "soldier-6",
+      "label": "Soldier Operator 6",
+      "type": "soldier",
+      "role": "operator-node",
+      "behavior": "lurk",
+      "position": [
+        393.03290546038,
+        631.5315764840345
+      ],
+      "transmission_range": 190.0,
+      "render": {
+        "shape": "square",
+        "color": "#8B5CF6",
+        "radius": 14
+      }
+    },
+    {
+      "id": "soldier-7",
+      "label": "Soldier Operator 7",
+      "type": "soldier",
+      "role": "operator-node",
+      "behavior": "lurk",
+      "position": [
+        393.03290546038,
+        679.2408060852233
+      ],
+      "transmission_range": 190.0,
+      "render": {
+        "shape": "square",
+        "color": "#8B5CF6",
+        "radius": 14
+      }
+    },
+    {
+      "id": "soldier-8",
+      "label": "Soldier Operator 8",
+      "type": "soldier",
+      "role": "operator-node",
+      "behavior": "lurk",
+      "position": [
+        340.02270932818243,
+        675.0757230378515
+      ],
+      "transmission_range": 190.0,
+      "render": {
+        "shape": "square",
+        "color": "#8B5CF6",
+        "radius": 14
+      }
+    },
+    {
+      "id": "soldier-9",
+      "label": "Soldier Operator 9",
+      "type": "soldier",
+      "role": "operator-node",
+      "behavior": "lurk",
+      "position": [
+        344.18779237555435,
+        728.0859444472924
+      ],
+      "transmission_range": 190.0,
+      "render": {
+        "shape": "square",
+        "color": "#8B5CF6",
+        "radius": 14
+      }
+    },
+    {
+      "id": "soldier-10",
+      "label": "Soldier Operator 10",
+      "type": "soldier",
+      "role": "operator-node",
+      "behavior": "lurk",
+      "position": [
+        348.70164587922716,
+        445.4325668830485
+      ],
+      "transmission_range": 190.0,
+      "render": {
+        "shape": "square",
+        "color": "#8B5CF6",
+        "radius": 14
+      }
+    },
+    {
+      "id": "soldier-11",
+      "label": "Soldier Operator 11",
+      "type": "soldier",
+      "role": "operator-node",
+      "behavior": "lurk",
+      "position": [
+        356.1208483830595,
+        380.2498081027247
+      ],
+      "transmission_range": 190.0,
+      "render": {
+        "shape": "square",
+        "color": "#8B5CF6",
+        "radius": 14
+      }
+    },
+    {
+      "id": "soldier-12",
+      "label": "Soldier Operator 12",
+      "type": "soldier",
+      "role": "operator-node",
+      "behavior": "lurk",
+      "position": [
+        422.893519300004,
+        385.01924127749305
+      ],
+      "transmission_range": 190.0,
+      "render": {
+        "shape": "square",
+        "color": "#8B5CF6",
+        "radius": 14
+      }
+    },
+    {
+      "id": "attack-1",
+      "label": "Attack Drone 1",
+      "type": "attack",
+      "role": "attack-drone",
+      "behavior": "lurk",
+      "position": [
+        482.7738870898818,
+        335.5234122662264
+      ],
+      "transmission_range": 160.0,
+      "render": {
+        "shape": "star",
+        "color": "#7DD3FC",
+        "radius": 15
+      },
+      "speed": 120.0
+    },
+    {
+      "id": "attack-2",
+      "label": "Attack Drone 2",
+      "type": "attack",
+      "role": "attack-drone",
+      "behavior": "lurk",
+      "position": [
+        482.33219771953225,
+        497.1841986714542
+      ],
+      "transmission_range": 160.0,
+      "render": {
+        "shape": "star",
+        "color": "#7DD3FC",
+        "radius": 15
+      },
+      "speed": 120.0
+    },
+    {
+      "id": "attack-3",
+      "label": "Attack Drone 3",
+      "type": "attack",
+      "role": "attack-drone",
+      "behavior": "lurk",
+      "position": [
+        469.52300378696316,
+        616.0004590273716
+      ],
+      "transmission_range": 160.0,
+      "render": {
+        "shape": "star",
+        "color": "#7DD3FC",
+        "radius": 15
+      },
+      "speed": 120.0
+    },
+    {
+      "id": "attack-4",
+      "label": "Attack Drone 4",
+      "type": "attack",
+      "role": "attack-drone",
+      "behavior": "lurk",
+      "position": [
+        498.23321724454786,
+        420.7707749944978
+      ],
+      "transmission_range": 160.0,
+      "render": {
+        "shape": "star",
+        "color": "#7DD3FC",
+        "radius": 15
+      },
+      "speed": 120.0
+    },
+    {
+      "id": "attack-5",
+      "label": "Attack Drone 5",
+      "type": "attack",
+      "role": "attack-drone",
+      "behavior": "lurk",
+      "position": [
+        285.33570565715223,
+        637.2018710483385
+      ],
+      "transmission_range": 160.0,
+      "render": {
+        "shape": "star",
+        "color": "#7DD3FC",
+        "radius": 15
+      },
+      "speed": 120.0
+    },
+    {
+      "id": "attack-6",
+      "label": "Attack Drone 6",
+      "type": "attack",
+      "role": "attack-drone",
+      "behavior": "lurk",
+      "position": [
+        342.7562083944839,
+        627.0428638859748
+      ],
+      "transmission_range": 160.0,
+      "render": {
+        "shape": "star",
+        "color": "#7DD3FC",
+        "radius": 15
+      },
+      "speed": 120.0
+    },
+    {
+      "id": "attack-7",
+      "label": "Attack Drone 7",
+      "type": "attack",
+      "role": "attack-drone",
+      "behavior": "lurk",
+      "position": [
+        221.28976126836122,
+        400.45278594382467
+      ],
+      "transmission_range": 160.0,
+      "render": {
+        "shape": "star",
+        "color": "#7DD3FC",
+        "radius": 15
+      },
+      "speed": 120.0
+    },
+    {
+      "id": "attack-8",
+      "label": "Attack Drone 8",
+      "type": "attack",
+      "role": "attack-drone",
+      "behavior": "lurk",
+      "position": [
+        180.21201797450294,
+        396.4774805144625
+      ],
+      "transmission_range": 160.0,
+      "render": {
+        "shape": "star",
+        "color": "#7DD3FC",
+        "radius": 15
+      },
+      "speed": 120.0
+    },
+    {
+      "id": "attack-9",
+      "label": "Attack Drone 9",
+      "type": "attack",
+      "role": "attack-drone",
+      "behavior": "lurk",
+      "position": [
+        147.9682010949327,
+        425.18774452015543
+      ],
+      "transmission_range": 160.0,
+      "render": {
+        "shape": "star",
+        "color": "#7DD3FC",
+        "radius": 15
+      },
+      "speed": 120.0
+    },
+    {
+      "id": "compute-1",
+      "label": "Compute Drone 1",
+      "type": "compute",
+      "role": "compute-drone",
+      "behavior": "lurk",
+      "position": [
+        417.21854304635764,
+        450.6571371823747
+      ],
+      "transmission_range": 420.0,
+      "render": {
+        "shape": "diamond",
+        "color": "#1E3A8A",
+        "radius": 16
+      }
+    },
+    {
+      "id": "compute-2",
+      "label": "Compute Drone 2",
+      "type": "compute",
+      "role": "compute-drone",
+      "behavior": "lurk",
+      "position": [
+        297.68212425787715,
+        416.8822623246553
+      ],
+      "transmission_range": 420.0,
+      "render": {
+        "shape": "diamond",
+        "color": "#1E3A8A",
+        "radius": 16
+      }
+    },
+    {
+      "id": "compute-3",
+      "label": "Compute Drone 3",
+      "type": "compute",
+      "role": "compute-drone",
+      "behavior": "lurk",
+      "position": [
+        268.992971487733,
+        683.1382606011769
+      ],
+      "transmission_range": 420.0,
+      "render": {
+        "shape": "diamond",
+        "color": "#1E3A8A",
+        "radius": 16
+      }
+    },
+    {
+      "id": "recon-1",
+      "label": "Recon Drone 1",
+      "type": "recon",
+      "role": "recon-drone",
+      "behavior": "lurk",
+      "position": [
+        423.5866015970978,
+        321.3891565411224
+      ],
+      "transmission_range": 170.0,
+      "render": {
+        "shape": "triangle",
+        "color": "#7DD3FC",
+        "radius": 13
+      },
+      "detection_radius": 220.0,
+      "speed": 95.0
+    },
+    {
+      "id": "recon-2",
+      "label": "Recon Drone 2",
+      "type": "recon",
+      "role": "recon-drone",
+      "behavior": "lurk",
+      "position": [
+        368.81626035591734,
+        318.738969770917
+      ],
+      "transmission_range": 170.0,
+      "render": {
+        "shape": "triangle",
+        "color": "#7DD3FC",
+        "radius": 13
+      },
+      "detection_radius": 220.0,
+      "speed": 95.0
+    },
+    {
+      "id": "recon-3",
+      "label": "Recon Drone 3",
+      "type": "recon",
+      "role": "recon-drone",
+      "behavior": "lurk",
+      "position": [
+        479.6820109493268,
+        711.8485372438968
+      ],
+      "transmission_range": 170.0,
+      "render": {
+        "shape": "triangle",
+        "color": "#7DD3FC",
+        "radius": 13
+      },
+      "detection_radius": 220.0,
+      "speed": 95.0
+    },
+    {
+      "id": "recon-4",
+      "label": "Recon Drone 4",
+      "type": "recon",
+      "role": "recon-drone",
+      "behavior": "lurk",
+      "position": [
+        504.4169695256576,
+        552.3962229644707
+      ],
+      "transmission_range": 170.0,
+      "render": {
+        "shape": "triangle",
+        "color": "#7DD3FC",
+        "radius": 13
+      },
+      "detection_radius": 220.0,
+      "speed": 95.0
+    }
+  ],
+  "enemies": [
+    {
+      "id": "enemy-infantry-1776567796053-22",
+      "label": "Enemy Infantry 1",
+      "subtype": "infantry",
+      "status": "active",
+      "position": [
+        752.5172429582242,
+        418.33937040712544
+      ],
+      "revealed": false
+    },
+    {
+      "id": "enemy-infantry-1776567806333-23",
+      "label": "Enemy Infantry 2",
+      "subtype": "infantry",
+      "status": "active",
+      "position": [
+        643.8791768865317,
+        702.918032572301
+      ],
+      "revealed": false
+    },
+    {
+      "id": "enemy-infantry-1776567809917-24",
+      "label": "Enemy Infantry 3",
+      "subtype": "infantry",
+      "status": "active",
+      "position": [
+        797.0323569028538,
+        367.9948460647262
+      ],
+      "revealed": false
+    },
+    {
+      "id": "enemy-infantry-1776567815114-25",
+      "label": "Enemy Infantry 4",
+      "subtype": "infantry",
+      "status": "active",
+      "position": [
+        687.8643369653486,
+        637.2052188477998
+      ],
+      "revealed": false
+    },
+    {
+      "id": "enemy-infantry-1776567816966-26",
+      "label": "Enemy Infantry 5",
+      "subtype": "infantry",
+      "status": "active",
+      "position": [
+        639.6396470383938,
+        645.1543752174449
+      ],
+      "revealed": false
+    },
+    {
+      "id": "enemy-infantry-1776567818281-27",
+      "label": "Enemy Infantry 6",
+      "subtype": "infantry",
+      "status": "active",
+      "position": [
+        787.4934905533171,
+        636.1453616553563
+      ],
+      "revealed": false
+    },
+    {
+      "id": "enemy-infantry-1776567819654-28",
+      "label": "Enemy Infantry 7",
+      "subtype": "infantry",
+      "status": "active",
+      "position": [
+        871.2241797844483,
+        733.6546997800738
+      ],
+      "revealed": false
+    },
+    {
+      "id": "enemy-infantry-1776567820812-29",
+      "label": "Enemy Infantry 8",
+      "subtype": "infantry",
+      "status": "active",
+      "position": [
+        871.7541336502613,
+        638.2651771186075
+      ],
+      "revealed": false
+    },
+    {
+      "id": "enemy-infantry-1776567822713-30",
+      "label": "Enemy Infantry 9",
+      "subtype": "infantry",
+      "status": "active",
+      "position": [
+        954.4251173064961,
+        424.1686670917349
+      ],
+      "revealed": false
+    },
+    {
+      "id": "enemy-infantry-1776567823791-31",
+      "label": "Enemy Infantry 10",
+      "subtype": "infantry",
+      "status": "active",
+      "position": [
+        718.0710503073086,
+        371.70444731664236
+      ],
+      "revealed": false
+    },
+    {
+      "id": "enemy-infantry-1776567824897-32",
+      "label": "Enemy Infantry 11",
+      "subtype": "infantry",
+      "status": "active",
+      "position": [
+        697.9332582590625,
+        436.88725663614844
+      ],
+      "revealed": false
+    },
+    {
+      "id": "enemy-infantry-1776567826405-33",
+      "label": "Enemy Infantry 12",
+      "subtype": "infantry",
+      "status": "active",
+      "position": [
+        801.2718867509916,
+        464.44425118822676
+      ],
+      "revealed": false
+    },
+    {
+      "id": "enemy-tank-1776568135100-35",
+      "label": "Enemy Tank 13",
+      "subtype": "tank",
+      "status": "active",
+      "position": [
+        931.0954219892561,
+        577.1312194518827
+      ],
+      "revealed": false
+    },
+    {
+      "id": "enemy-tank-1776568142468-36",
+      "label": "Enemy Tank 14",
+      "subtype": "tank",
+      "status": "active",
+      "position": [
+        924.4699803377969,
+        213.61528208826775
+      ],
+      "revealed": false
+    },
+    {
+      "id": "enemy-tank-1776568143927-37",
+      "label": "Enemy Tank 15",
+      "subtype": "tank",
+      "status": "active",
+      "position": [
+        776.0601277835959,
+        214.94040074742455
+      ],
+      "revealed": false
+    },
+    {
+      "id": "enemy-vehicle-1776568158446-38",
+      "label": "Enemy Vehicle 16",
+      "subtype": "vehicle",
+      "status": "active",
+      "position": [
+        850.7067434310459,
+        573.5977044890866
+      ],
+      "revealed": false
+    },
+    {
+      "id": "enemy-vehicle-1776568163925-39",
+      "label": "Enemy Vehicle 17",
+      "subtype": "vehicle",
+      "status": "active",
+      "position": [
+        765.4593807027744,
+        572.2725352818214
+      ],
+      "revealed": false
+    }
+  ],
+  "structures": [
+    {
+      "id": "structure-building-1776567661797-1",
+      "label": "Building 1",
+      "subtype": "building",
+      "status": "intact",
+      "blocking_size": 0.8,
+      "position": [
+        745.86,
+        378.14
+      ],
+      "footprint": {
+        "kind": "rect",
+        "x": 705.96,
+        "y": 354.96,
+        "width": 79.8,
+        "height": 46.36
+      },
+      "render": {
+        "shape": "rectangle",
+        "size": 20,
+        "color": "#8B7355",
+        "opacity": 0.48
+      }
+    },
+    {
+      "id": "structure-building-1776567670197-2",
+      "label": "Building 2",
+      "subtype": "building",
+      "status": "intact",
+      "blocking_size": 0.65,
+      "position": [
+        974.83,
+        406.41
+      ],
+      "footprint": {
+        "kind": "rect",
+        "x": 949.66,
+        "y": 376.47,
+        "width": 50.34,
+        "height": 59.88
+      },
+      "render": {
+        "shape": "rectangle",
+        "size": 18,
+        "color": "#8B7355",
+        "opacity": 0.48
+      }
+    },
+    {
+      "id": "structure-building-1776567673831-3",
+      "label": "Building 3",
+      "subtype": "building",
+      "status": "intact",
+      "blocking_size": 0.65,
+      "position": [
+        812.4,
+        450.13
+      ],
+      "footprint": {
+        "kind": "rect",
+        "x": 782.19,
+        "y": 420.46,
+        "width": 60.41,
+        "height": 59.35
+      },
+      "render": {
+        "shape": "rectangle",
+        "size": 18,
+        "color": "#8B7355",
+        "opacity": 0.48
+      }
+    },
+    {
+      "id": "structure-building-1776567676663-4",
+      "label": "Building 4",
+      "subtype": "building",
+      "status": "intact",
+      "blocking_size": 0.65,
+      "position": [
+        710.66,
+        427.35
+      ],
+      "footprint": {
+        "kind": "rect",
+        "x": 680.45,
+        "y": 406.15,
+        "width": 60.41,
+        "height": 42.4
+      },
+      "render": {
+        "shape": "rectangle",
+        "size": 18,
+        "color": "#8B7355",
+        "opacity": 0.48
+      }
+    },
+    {
+      "id": "structure-building-1776567679313-5",
+      "label": "Building 5",
+      "subtype": "building",
+      "status": "intact",
+      "blocking_size": 0.77,
+      "position": [
+        506.62,
+        389.98
+      ],
+      "footprint": {
+        "kind": "rect",
+        "x": 467.94,
+        "y": 366.93,
+        "width": 77.37,
+        "height": 46.1
+      },
+      "render": {
+        "shape": "rectangle",
+        "size": 19,
+        "color": "#8B7355",
+        "opacity": 0.48
+      }
+    },
+    {
+      "id": "structure-building-1776567684120-6",
+      "label": "Building 6",
+      "subtype": "building",
+      "status": "intact",
+      "blocking_size": 0.65,
+      "position": [
+        497.35,
+        442.72
+      ],
+      "footprint": {
+        "kind": "rect",
+        "x": 464.76,
+        "y": 415.16,
+        "width": 65.18,
+        "height": 55.11
+      },
+      "render": {
+        "shape": "rectangle",
+        "size": 18,
+        "color": "#8B7355",
+        "opacity": 0.48
+      }
+    },
+    {
+      "id": "structure-building-1776567688048-7",
+      "label": "Building 7",
+      "subtype": "building",
+      "status": "intact",
+      "blocking_size": 0.65,
+      "position": [
+        341.81,
+        439.27
+      ],
+      "footprint": {
+        "kind": "rect",
+        "x": 310.02,
+        "y": 415.16,
+        "width": 63.59,
+        "height": 48.22
+      },
+      "render": {
+        "shape": "rectangle",
+        "size": 18,
+        "color": "#8B7355",
+        "opacity": 0.48
+      }
+    },
+    {
+      "id": "structure-building-1776567693321-8",
+      "label": "Building 8",
+      "subtype": "building",
+      "status": "intact",
+      "blocking_size": 0.65,
+      "position": [
+        418.92,
+        384.16
+      ],
+      "footprint": {
+        "kind": "rect",
+        "x": 388.45,
+        "y": 363.76,
+        "width": 60.94,
+        "height": 40.81
+      },
+      "render": {
+        "shape": "rectangle",
+        "size": 18,
+        "color": "#8B7355",
+        "opacity": 0.48
+      }
+    },
+    {
+      "id": "structure-building-1776567696115-9",
+      "label": "Building 9",
+      "subtype": "building",
+      "status": "intact",
+      "blocking_size": 0.65,
+      "position": [
+        351.61,
+        382.57
+      ],
+      "footprint": {
+        "kind": "rect",
+        "x": 324.85,
+        "y": 356.87,
+        "width": 53.52,
+        "height": 51.4
+      },
+      "render": {
+        "shape": "rectangle",
+        "size": 18,
+        "color": "#8B7355",
+        "opacity": 0.48
+      }
+    },
+    {
+      "id": "structure-building-1776567699452-10",
+      "label": "Building 10",
+      "subtype": "building",
+      "status": "intact",
+      "blocking_size": 0.65,
+      "position": [
+        188.92,
+        434.24
+      ],
+      "footprint": {
+        "kind": "rect",
+        "x": 159.51,
+        "y": 405.62,
+        "width": 58.82,
+        "height": 57.23
+      },
+      "render": {
+        "shape": "rectangle",
+        "size": 18,
+        "color": "#8B7355",
+        "opacity": 0.48
+      }
+    },
+    {
+      "id": "structure-building-1776567708124-11",
+      "label": "Building 11",
+      "subtype": "building",
+      "status": "intact",
+      "blocking_size": 1.47,
+      "position": [
+        92.47,
+        669.0
+      ],
+      "footprint": {
+        "kind": "rect",
+        "x": 56.7,
+        "y": 595.34,
+        "width": 71.54,
+        "height": 147.32
+      },
+      "render": {
+        "shape": "rectangle",
+        "size": 37,
+        "color": "#8B7355",
+        "opacity": 0.48
+      }
+    },
+    {
+      "id": "structure-building-1776567711261-12",
+      "label": "Building 12",
+      "subtype": "building",
+      "status": "intact",
+      "blocking_size": 0.65,
+      "position": [
+        167.98,
+        642.24
+      ],
+      "footprint": {
+        "kind": "rect",
+        "x": 144.67,
+        "y": 611.24,
+        "width": 46.63,
+        "height": 62.0
+      },
+      "render": {
+        "shape": "rectangle",
+        "size": 18,
+        "color": "#8B7355",
+        "opacity": 0.48
+      }
+    },
+    {
+      "id": "structure-building-1776567713448-13",
+      "label": "Building 13",
+      "subtype": "building",
+      "status": "intact",
+      "blocking_size": 0.66,
+      "position": [
+        234.24,
+        643.03
+      ],
+      "footprint": {
+        "kind": "rect",
+        "x": 206.68,
+        "y": 610.18,
+        "width": 55.11,
+        "height": 65.71
+      },
+      "render": {
+        "shape": "rectangle",
+        "size": 18,
+        "color": "#8B7355",
+        "opacity": 0.48
+      }
+    },
+    {
+      "id": "structure-building-1776567717229-14",
+      "label": "Building 14",
+      "subtype": "building",
+      "status": "intact",
+      "blocking_size": 0.92,
+      "position": [
+        324.06,
+        700.0
+      ],
+      "footprint": {
+        "kind": "rect",
+        "x": 278.22,
+        "y": 656.81,
+        "width": 91.68,
+        "height": 86.38
+      },
+      "render": {
+        "shape": "rectangle",
+        "size": 23,
+        "color": "#8B7355",
+        "opacity": 0.48
+      }
+    },
+    {
+      "id": "structure-building-1776567721364-15",
+      "label": "Building 15",
+      "subtype": "building",
+      "status": "intact",
+      "blocking_size": 0.82,
+      "position": [
+        392.43,
+        657.88
+      ],
+      "footprint": {
+        "kind": "rect",
+        "x": 374.14,
+        "y": 617.07,
+        "width": 36.57,
+        "height": 81.61
+      },
+      "render": {
+        "shape": "rectangle",
+        "size": 20,
+        "color": "#8B7355",
+        "opacity": 0.48
+      }
+    },
+    {
+      "id": "structure-building-1776567725485-16",
+      "label": "Building 16",
+      "subtype": "building",
+      "status": "intact",
+      "blocking_size": 0.65,
+      "position": [
+        497.35,
+        655.49
+      ],
+      "footprint": {
+        "kind": "rect",
+        "x": 467.94,
+        "y": 626.08,
+        "width": 58.82,
+        "height": 58.82
+      },
+      "render": {
+        "shape": "rectangle",
+        "size": 18,
+        "color": "#8B7355",
+        "opacity": 0.48
+      }
+    },
+    {
+      "id": "structure-building-1776567728427-17",
+      "label": "Building 17",
+      "subtype": "building",
+      "status": "intact",
+      "blocking_size": 0.65,
+      "position": [
+        652.62,
+        656.81
+      ],
+      "footprint": {
+        "kind": "rect",
+        "x": 629.04,
+        "y": 629.26,
+        "width": 47.16,
+        "height": 55.11
+      },
+      "render": {
+        "shape": "rectangle",
+        "size": 18,
+        "color": "#8B7355",
+        "opacity": 0.48
+      }
+    },
+    {
+      "id": "structure-building-1776567731048-18",
+      "label": "Building 18",
+      "subtype": "building",
+      "status": "intact",
+      "blocking_size": 0.65,
+      "position": [
+        615.26,
+        693.38
+      ],
+      "footprint": {
+        "kind": "rect",
+        "x": 602.01,
+        "y": 675.36,
+        "width": 26.5,
+        "height": 36.04
+      },
+      "render": {
+        "shape": "rectangle",
+        "size": 18,
+        "color": "#8B7355",
+        "opacity": 0.48
+      }
+    },
+    {
+      "id": "structure-building-1776567733996-19",
+      "label": "Building 19",
+      "subtype": "building",
+      "status": "intact",
+      "blocking_size": 0.65,
+      "position": [
+        809.75,
+        653.1
+      ],
+      "footprint": {
+        "kind": "rect",
+        "x": 777.42,
+        "y": 621.31,
+        "width": 64.65,
+        "height": 63.59
+      },
+      "render": {
+        "shape": "rectangle",
+        "size": 18,
+        "color": "#8B7355",
+        "opacity": 0.48
+      }
+    },
+    {
+      "id": "structure-building-1776567737099-20",
+      "label": "Building 20",
+      "subtype": "building",
+      "status": "intact",
+      "blocking_size": 1.26,
+      "position": [
+        892.95,
+        688.35
+      ],
+      "footprint": {
+        "kind": "rect",
+        "x": 864.86,
+        "y": 625.55,
+        "width": 56.17,
+        "height": 125.6
+      },
+      "render": {
+        "shape": "rectangle",
+        "size": 31,
+        "color": "#8B7355",
+        "opacity": 0.48
+      }
+    },
+    {
+      "id": "structure-building-1776567740847-21",
+      "label": "Building 21",
+      "subtype": "building",
+      "status": "intact",
+      "blocking_size": 0.69,
+      "position": [
+        956.55,
+        688.08
+      ],
+      "footprint": {
+        "kind": "rect",
+        "x": 922.1,
+        "y": 666.88,
+        "width": 68.89,
+        "height": 42.4
+      },
+      "render": {
+        "shape": "rectangle",
+        "size": 18,
+        "color": "#8B7355",
+        "opacity": 0.48
+      }
+    }
+  ],
+  "special_entities": [],
+  "transmission_graph": [],
+  "initial_events": []
+}

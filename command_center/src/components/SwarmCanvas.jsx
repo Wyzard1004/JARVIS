@@ -5,6 +5,7 @@
 
 import React, { useEffect, useRef, useState } from 'react'
 import { stateToEntities } from '../lib/entities'
+import { getEntityDisplayLabel } from '../lib/displayNames'
 import {
   computeVisibilityPolygon,
   createRectFootprint,
@@ -170,47 +171,8 @@ function SwarmCanvas({
     return `${truncated}...`
   }
 
-  const formatLabelText = (rawValue) => {
-    if (!rawValue) return ''
-    return String(rawValue)
-      .replace(/_/g, ' ')
-      .replace(/\b\w/g, (character) => character.toUpperCase())
-  }
-
-  const getEntityDescription = (entity) => {
-    if (entity.label && String(entity.label).toLowerCase() !== String(entity.id || '').toLowerCase()) {
-      return entity.label
-    }
-
-    if (entity.type === 'drone') {
-      return `${formatLabelText(entity.droneType)} Drone`
-    }
-    if (entity.type === 'enemy') {
-      return `Hostile ${formatLabelText(entity.enemyType)}`
-    }
-    if (entity.type === 'structure') {
-      return formatLabelText(entity.structureType || 'Structure')
-    }
-    if (entity.type === 'poi') {
-      return formatLabelText(entity.poiType || 'Point of Interest')
-    }
-    return null
-  }
-
-  const getEntityCallsign = (entity) => {
-    const rawId = String(entity.id || entity.label || 'unit')
-    return rawId
-      .replace(/^(enemy|structure|special|poi)-/i, '')
-      .toUpperCase()
-  }
-
   const getEntityLabelLines = (entity) => {
-    const primary = getEntityCallsign(entity)
-    const secondary = getEntityDescription(entity)
-    if (!secondary || secondary.toLowerCase() === primary.toLowerCase()) {
-      return [primary]
-    }
-    return [primary, secondary]
+    return [getEntityDisplayLabel(entity)]
   }
 
   const shouldRenderEntityLabel = (entity) => {

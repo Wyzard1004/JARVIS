@@ -28,6 +28,8 @@ function SoldierSelector({ activeSoldier, onSoldierChange, soldierStatus }) {
     return "✕"
   }
 
+  const activeSoldierLabel = soldiers.find((soldier) => soldier.id === activeSoldier)?.label || "Unknown Soldier"
+
   return (
     <div className="soldier-selector w-full bg-gray-900 border border-gray-700 rounded-lg p-4">
       <div className="flex items-center justify-between mb-4">
@@ -73,8 +75,8 @@ function SoldierSelector({ activeSoldier, onSoldierChange, soldierStatus }) {
               </span>
             </div>
             <div>
-              <span className="text-gray-400">Soldier ID:</span>
-              <span className="ml-2 font-mono text-cyan-400">{activeSoldier}</span>
+              <span className="text-gray-400">Selected Soldier:</span>
+              <span className="ml-2 text-cyan-400">{activeSoldierLabel}</span>
             </div>
           </div>
           

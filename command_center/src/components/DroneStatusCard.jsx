@@ -9,6 +9,7 @@
  */
 
 import React from 'react'
+import { getEntityDisplayLabel, getEntityTypeLabel } from '../lib/displayNames'
 
 const NATO_PHONETIC = [
   'Alpha', 'Bravo', 'Charlie', 'Delta', 'Echo', 'Foxtrot', 'Golf', 'Hotel'
@@ -48,6 +49,8 @@ function DroneStatusCard({ drone, commsStatus = 'online' }) {
   const coordinateString = position
     ? `${Math.round(position[0])}, ${Math.round(position[1])}`
     : 'Unknown'
+  const displayName = getEntityDisplayLabel(drone)
+  const typeLabel = getEntityTypeLabel(drone)
 
   // Comms status indicator
   const getCommsColor = () => {
@@ -66,10 +69,10 @@ function DroneStatusCard({ drone, commsStatus = 'online' }) {
 
   return (
     <div className="w-full p-4 bg-gray-700 border border-gray-600 rounded space-y-3">
-      {/* Header with drone ID and type */}
+      {/* Header with drone name and type */}
       <div className="border-b border-gray-600 pb-3">
-        <h3 className="font-bold text-lg text-gray-100">{drone.id}</h3>
-        <p className="text-xs text-gray-400 capitalize">{drone.type} Drone</p>
+        <h3 className="font-bold text-lg text-gray-100">{displayName}</h3>
+        <p className="text-xs text-gray-400">{typeLabel}</p>
       </div>
 
       {/* Position */}
