@@ -1,4 +1,4 @@
-JARVIS Master Blueprint
+# Overview
 
 Project Name: JARVIS (Joint Adaptive Relay for Variable Interoperable Swarms)
 Hackathon: Critical Ops Hackathon (April 2026)
@@ -102,3 +102,8 @@ Representative WebSocket payload:
 ```
 
 Note: the event name `gossip_update` remains in the current implementation for frontend compatibility, even when the selected algorithm is the TCP/Raft baseline.
+
+The command lifecycle now also includes:
+
+- `command_pending` when an `ATTACK_AREA` command is staged and waiting on `EXECUTE`
+- `command_canceled` when a staged command is cleared by `DISREGARD`

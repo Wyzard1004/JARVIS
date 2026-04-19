@@ -109,8 +109,13 @@ function App() {
             return
           }
           
-          // Handle gossip updates from voice commands
-          if (data.event === 'gossip_update' || data.event === 'swarm_state') {
+          // Handle gossip updates from voice commands and staged command states
+          if (
+            data.event === 'gossip_update' ||
+            data.event === 'swarm_state' ||
+            data.event === 'command_pending' ||
+            data.event === 'command_canceled'
+          ) {
             console.log('[App] Updating swarm state from command response')
             setSwarmState(data)
             
@@ -119,15 +124,17 @@ function App() {
               setEvents(data.events)
             }
             
-            // Update current command display if gossip_update
-            if (data.event === 'gossip_update') {
+            // Update current command display for command lifecycle events
+            if (data.event === 'gossip_update' || data.event === 'command_pending' || data.event === 'command_canceled') {
               setCurrentCommand({
                 timestamp: new Date().toLocaleTimeString(),
                 target: data.target_location || 'Unknown',
                 status: data.status || 'processing',
                 nodes: data.active_nodes?.length || data.nodes?.length || 0,
                 totalTime: `${(data.total_propagation_ms || 0).toFixed(0)}ms`,
-                message: data.confirmation_text || ''
+                message: data.confirmation_text || '',
+                pendingExecute: Boolean(data.pending_execute?.present),
+                callsign: data.parsed_command?.callsign || 'JARVIS'
               })
             }
             return
@@ -261,11 +268,25 @@ function App() {
         timestamp: new Date().toISOString(),
         command: transcriptText,
         status: result.status,
-        goal: result.parsed_command?.goal || 'UNKNOWN'
+        goal: result.parsed_command?.goal || 'UNKNOWN',
+        executionState: result.parsed_command?.execution_state || 'NONE'
       }])
 
       if (result.nodes?.length) {
         setSwarmState(result)
+      }
+
+      if (result.status) {
+        setCurrentCommand({
+          timestamp: new Date().toLocaleTimeString(),
+          target: result.target_location || 'Unknown',
+          status: result.status || 'processing',
+          nodes: result.active_nodes?.length || result.nodes?.length || 0,
+          totalTime: `${(result.total_propagation_ms || 0).toFixed(0)}ms`,
+          message: result.confirmation_text || result.message || '',
+          pendingExecute: Boolean(result.pending_execute?.present),
+          callsign: result.parsed_command?.callsign || 'JARVIS'
+        })
       }
       
       console.log('[App] Command sent:', result)
@@ -311,13 +332,20 @@ function App() {
 
       {/* Active Mission Status */}
       {currentCommand && (
-        <div className="bg-gradient-to-r from-yellow-900 to-red-900 border-b-4 border-red-500 p-6">
+        <div className={currentCommand.pendingExecute
+          ? 'bg-gradient-to-r from-yellow-950 to-orange-900 border-b-4 border-yellow-500 p-6'
+          : 'bg-gradient-to-r from-yellow-900 to-red-900 border-b-4 border-red-500 p-6'}>
           <div className="flex items-start justify-between">
             <div>
               <p className="text-xs uppercase tracking-widest text-gray-300 mb-2">📡 ACTIVE MISSION</p>
               <h2 className="text-4xl font-bold text-yellow-300 mb-4">
                 {currentCommand.target || 'UNKNOWN'}
               </h2>
+              {currentCommand.pendingExecute && (
+                <p className="mb-4 inline-block rounded border border-yellow-400 px-3 py-1 text-sm font-semibold uppercase tracking-wide text-yellow-200">
+                  Awaiting Execute
+                </p>
+              )}
               <div className="grid grid-cols-3 gap-8">
                 <div>
                   <p className="text-xs text-gray-300 uppercase">Status</p>
@@ -413,6 +441,7 @@ function App() {
                   <div key={i} className="bg-gray-900 p-2 rounded text-xs border-l-2 border-yellow-500">
                     <p className="font-mono text-gray-300">{cmd.command.substring(0, 40)}...</p>
                     <p className="text-xs text-blue-400">{cmd.goal}</p>
+                    <p className="text-[10px] text-gray-500">{cmd.status} / {cmd.executionState}</p>
                   </div>
                 ))}
               </div>

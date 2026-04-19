@@ -51,7 +51,7 @@ fi
 echo -e "\n${YELLOW}[TEST 4] Voice Command Processing${NC}"
 COMMAND=$(curl -s -X POST http://localhost:8000/api/voice-command \
   -H "Content-Type: application/json" \
-  -d '{"transcribed_text": "JARVIS, deploy swarm to Grid Alpha"}')
+  -d '{"transcribed_text": "JARVIS, move to Grid Alpha, over."}')
 
 if [[ $COMMAND == *"gossip_update"* ]]; then
     STATUS=$(echo $COMMAND | python3 -c "import sys, json; print(json.load(sys.stdin).get('status'))")
@@ -62,6 +62,32 @@ if [[ $COMMAND == *"gossip_update"* ]]; then
 else
     echo -e "${RED}✗ Voice command processing failed${NC}"
     echo "Response: $COMMAND"
+    exit 1
+fi
+
+# Test 4b: Staged Attack Flow
+echo -e "\n${YELLOW}[TEST 4b] Staged Attack + Execute${NC}"
+STAGE=$(curl -s -X POST http://localhost:8000/api/voice-command \
+  -H "Content-Type: application/json" \
+  -d '{"transcribed_text": "JARVIS, attack Grid Bravo, over."}')
+
+if [[ $STAGE == *"command_pending"* ]] && [[ $STAGE == *"pending_execute"* ]]; then
+    echo -e "${GREEN}✓ Attack command staged successfully${NC}"
+else
+    echo -e "${RED}✗ Attack staging failed${NC}"
+    echo "Response: $STAGE"
+    exit 1
+fi
+
+EXECUTE=$(curl -s -X POST http://localhost:8000/api/voice-command \
+  -H "Content-Type: application/json" \
+  -d '{"transcribed_text": "JARVIS, execute, over."}')
+
+if [[ $EXECUTE == *"gossip_update"* ]] && [[ $EXECUTE == *"EXECUTED"* ]]; then
+    echo -e "${GREEN}✓ Execute command released staged attack${NC}"
+else
+    echo -e "${RED}✗ Execute flow failed${NC}"
+    echo "Response: $EXECUTE"
     exit 1
 fi
 

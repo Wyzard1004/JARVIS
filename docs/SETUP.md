@@ -1,4 +1,4 @@
-# 4.0.0 Full-Stack Integration Setup Guide
+# Setup Guide
 
 > **Target**: Command UI + backend integration for JARVIS
 
@@ -97,7 +97,7 @@ Example:
 
 ```json
 {
-  "transcribed_text": "JARVIS, move swarm to Grid Alpha",
+  "transcribed_text": "JARVIS, move to Grid Alpha, over.",
   "consensus_algorithm": "raft"
 }
 ```
@@ -165,6 +165,27 @@ Representative update:
 ```
 
 Note: the event name is still `gossip_update` for compatibility, even when the backend dispatches the TCP/Raft baseline.
+
+Staged destructive commands introduce two additional lifecycle events:
+
+```json
+{
+  "event": "command_pending",
+  "status": "pending_execute",
+  "pending_execute": {
+    "present": true
+  }
+}
+```
+
+and:
+
+```json
+{
+  "event": "command_canceled",
+  "status": "canceled"
+}
+```
 
 ## What Is Still Missing
 

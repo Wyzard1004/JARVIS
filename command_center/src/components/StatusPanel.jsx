@@ -13,6 +13,8 @@ function StatusPanel({ connectionStatus, swarmState }) {
     error: 'text-yellow-400'
   }
   const totalNodes = swarmState?.nodes?.length || swarmState?.data?.nodes?.length || 0
+  const networkProfile = swarmState?.network_profile || {}
+  const pendingExecute = swarmState?.pending_execute
 
   return (
     <div className="bg-gray-800 rounded border border-gray-700 p-4">
@@ -40,6 +42,22 @@ function StatusPanel({ connectionStatus, swarmState }) {
           <div>
             <p className="text-gray-400 text-sm">Status</p>
             <p className="font-mono text-purple-400">{swarmState.status}</p>
+          </div>
+        )}
+
+        {pendingExecute?.present && (
+          <div>
+            <p className="text-gray-400 text-sm">Pending Execute</p>
+            <p className="font-mono text-yellow-300">AWAITING CONFIRMATION</p>
+          </div>
+        )}
+
+        {networkProfile?.gossip_fanout && (
+          <div>
+            <p className="text-gray-400 text-sm">Network Profile</p>
+            <p className="font-mono text-cyan-400">
+              {networkProfile.profile || 'baseline'} / fanout {networkProfile.gossip_fanout} / hops {networkProfile.max_hops}
+            </p>
           </div>
         )}
       </div>

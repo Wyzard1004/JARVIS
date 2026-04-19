@@ -1,8 +1,8 @@
-# Richard AI Bridge Sketch
+# AI Bridge Sketch
 
 ## Purpose
 
-Richard owns the `3.x.x` workstream in `development_gameplan.md`.
+Richard owns the `3.x.x` workstream in `docs/ROADMAP.md`.
 The goal of this module is narrow:
 
 - accept transcribed human command text

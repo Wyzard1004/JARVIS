@@ -11,6 +11,7 @@ from __future__ import annotations
 import heapq
 import itertools
 import json
+import os
 from copy import deepcopy
 from datetime import datetime
 from pathlib import Path
@@ -44,8 +45,16 @@ class SwarmCoordinator:
     """Owns topology, movement state, and consensus visualizations."""
 
     DEFAULT_SEED = 42
-    DEFAULT_RETRY_LIMIT = 2
-    DEFAULT_RETRY_BACKOFF_MS = 55.0
+    DEFAULT_RETRY_LIMIT = 3
+    DEFAULT_RETRY_BACKOFF_MS = 200.0
+    DEFAULT_GOSSIP_FANOUT = 3
+    DEFAULT_MAX_HOPS = 5
+    DEFAULT_LEASE_MS = 10000
+    DEFAULT_CLAIM_TIMEOUT_MS = 10000
+    DEMO_GOSSIP_FANOUT = 5
+    DEMO_MAX_HOPS = 3
+    DEMO_LEASE_MS = 5000
+    DEMO_CLAIM_TIMEOUT_MS = 5000
 
     DEFAULT_SPEED_BY_TYPE = {
         "soldier": 0.0,
@@ -95,6 +104,19 @@ class SwarmCoordinator:
 
         self._initialize_nodes()
         self._seed_initial_events()
+
+    def get_network_profile(self) -> Dict:
+        profile_mode = os.getenv("JARVIS_NETWORK_PROFILE", "baseline").strip().lower()
+        demo_mode = profile_mode == "demo"
+        return {
+            "profile": "demo" if demo_mode else "baseline",
+            "gossip_fanout": self.DEMO_GOSSIP_FANOUT if demo_mode else self.DEFAULT_GOSSIP_FANOUT,
+            "max_hops": self.DEMO_MAX_HOPS if demo_mode else self.DEFAULT_MAX_HOPS,
+            "retry_limit": self.DEFAULT_RETRY_LIMIT if not demo_mode else 2,
+            "retry_backoff_ms": self.DEFAULT_RETRY_BACKOFF_MS if not demo_mode else 100.0,
+            "lease_ms": self.DEMO_LEASE_MS if demo_mode else self.DEFAULT_LEASE_MS,
+            "claim_timeout_ms": self.DEMO_CLAIM_TIMEOUT_MS if demo_mode else self.DEFAULT_CLAIM_TIMEOUT_MS,
+        }
 
     def _load_config(self, config_path: str) -> Optional[Dict]:
         try:
@@ -369,6 +391,7 @@ class SwarmCoordinator:
         if not self._spanning_tree_edges:
             self.calculate_transmission_graph()
 
+        network_profile = self.get_network_profile()
         message_id = f"gossip-{next(self._message_sequence):06d}"
         current_time_ms = datetime.now().timestamp() * 1000
         priority_rank = self.PRIORITY_PROFILES.get(priority, self.PRIORITY_PROFILES["high"])["rank"]
@@ -386,8 +409,8 @@ class SwarmCoordinator:
             "hop_count": 0,
             "delivered_to": set(),
             "failed_to": set(),
-            "retry_limit": self.DEFAULT_RETRY_LIMIT,
-            "retry_backoff_ms": self.DEFAULT_RETRY_BACKOFF_MS,
+            "retry_limit": int(network_profile.get("retry_limit", self.DEFAULT_RETRY_LIMIT)),
+            "retry_backoff_ms": float(network_profile.get("retry_backoff_ms", self.DEFAULT_RETRY_BACKOFF_MS)),
         }
 
         for drone_id in target_drones:
@@ -417,6 +440,7 @@ class SwarmCoordinator:
             "initiated_at_ms": round(current_time_ms, 1),
             "initial_hop_count": len(initial_hops),
             "initial_hops": initial_hops,
+            "network_profile": network_profile,
         }
 
     def _propagate_message(self, message_id: str, source_id: str, current_time_ms: float) -> List[str]:
@@ -432,7 +456,7 @@ class SwarmCoordinator:
 
             last_attempt = entry["last_attempt_ms"]
             if last_attempt is not None:
-                retry_delay = self.DEFAULT_RETRY_BACKOFF_MS * (entry["retry_round"] + 1)
+                retry_delay = message_state["retry_backoff_ms"] * (entry["retry_round"] + 1)
                 if current_time_ms - last_attempt < retry_delay:
                     continue
 
@@ -718,39 +742,6 @@ class SwarmCoordinator:
         self._last_state = deepcopy(result)
         return result
 
-    def calculate_gossip_path(self, swarm_intent: Dict) -> Dict:
-        origin = self._resolve_origin_node(swarm_intent.get("origin") or swarm_intent.get("operator_node"))
-        target_location = swarm_intent.get("target_location")
-        target_position = self.space.location_to_point(target_location)
-        active_nodes = self._gossip_component(origin)
-        propagation_order, total = self._gossip_propagation(origin, active_nodes)
-        return self._result_payload(
-            algorithm="gossip",
-            origin=origin,
-            active_nodes=active_nodes,
-            propagation_order=propagation_order,
-            total_propagation_ms=total,
-            target_location=target_location,
-            target_position=target_position,
-            control_node=origin,
-        )
-
-    def calculate_raft_path(self, swarm_intent: Dict) -> Dict:
-        origin = self._resolve_origin_node(swarm_intent.get("origin") or swarm_intent.get("operator_node"))
-        target_location = swarm_intent.get("target_location")
-        target_position = self.space.location_to_point(target_location)
-        leader, active_nodes, propagation_order, total = self._raft_path(origin)
-        return self._result_payload(
-            algorithm="raft",
-            origin=origin,
-            active_nodes=active_nodes,
-            propagation_order=propagation_order,
-            total_propagation_ms=total,
-            target_location=target_location,
-            target_position=target_position,
-            control_node=leader,
-        )
-
     def benchmark_gossip_vs_tcp(self) -> Dict:
         edge_count = len(self.calculate_transmission_graph())
         node_count = len(self._drone_positions)
@@ -803,37 +794,11 @@ class SwarmCoordinator:
     def _compat_target_pixel(self, target_location: Optional[str]) -> Tuple[float, float]:
         if not target_location:
             return (0.0, 0.0)
-
-        normalized = target_location.strip().lower()
-        quick_map = {
-            "grid alpha": (6, 6),
-            "grid bravo": (10, 10),
-            "grid charlie": (14, 14),
-        }
-        grid_pos = quick_map.get(normalized)
-        if grid_pos is None:
-            return (0.0, 0.0)
-
-        x, y = self.grid_system.grid_to_pixel(grid_pos[0], grid_pos[1])
+        x, y = self.space.location_to_point(target_location)
         return (float(x), float(y))
 
     def _compat_nodes(self) -> List[Dict]:
-        nodes = []
-        for node in self._base_nodes:
-            node_id = node["id"]
-            grid_position = self._drone_positions.get(node_id, (13, 13))
-            x, y = self.grid_system.grid_to_pixel(grid_position[0], grid_position[1])
-            nodes.append(
-                {
-                    **deepcopy(node),
-                    "status": node.get("status", "active"),
-                    "x": float(x),
-                    "y": float(y),
-                    "grid_position": grid_position,
-                    "transmission_range": self._transmission_ranges.get(node_id, 3),
-                }
-            )
-        return nodes
+        return [self._node_record(node_id, status="active") for node_id in self._drone_positions]
 
     def _compat_edges(self, origin: str, initial_hops: List[str]) -> List[Dict]:
         hop_set = set(initial_hops)
@@ -926,15 +891,43 @@ class SwarmCoordinator:
                 "algorithm": f"{algorithm}-compat",
                 "simulations": 0,
             },
+            "network_profile": self.get_network_profile(),
         }
 
     def calculate_gossip_path(self, command: Dict) -> Dict:
         """Backward-compatible entrypoint expected by older API layers."""
-        return self._compat_consensus_result(command, algorithm="gossip")
+        origin = self._resolve_origin_node(command.get("origin") or command.get("operator_node"))
+        target_location = command.get("target_location")
+        target_position = self.space.location_to_point(target_location)
+        active_nodes = self._gossip_component(origin)
+        propagation_order, total = self._gossip_propagation(origin, active_nodes)
+        return self._result_payload(
+            algorithm="gossip",
+            origin=origin,
+            active_nodes=active_nodes,
+            propagation_order=propagation_order,
+            total_propagation_ms=total,
+            target_location=target_location,
+            target_position=target_position,
+            control_node=origin,
+        )
 
     def calculate_raft_path(self, command: Dict) -> Dict:
         """Backward-compatible entrypoint expected by older API layers."""
-        return self._compat_consensus_result(command, algorithm="raft")
+        origin = self._resolve_origin_node(command.get("origin") or command.get("operator_node"))
+        target_location = command.get("target_location")
+        target_position = self.space.location_to_point(target_location)
+        leader, active_nodes, propagation_order, total = self._raft_path(origin)
+        return self._result_payload(
+            algorithm="raft",
+            origin=origin,
+            active_nodes=active_nodes,
+            propagation_order=propagation_order,
+            total_propagation_ms=total,
+            target_location=target_location,
+            target_position=target_position,
+            control_node=leader,
+        )
 
     def get_state(self) -> Dict:
         state = deepcopy(self._last_state)
@@ -962,6 +955,7 @@ class SwarmCoordinator:
         state.setdefault("target_x", 500.0)
         state.setdefault("target_y", 500.0)
         state.setdefault("benchmark", self.benchmark_gossip_vs_tcp())
+        state["network_profile"] = self.get_network_profile()
         state.setdefault("timestamp", datetime.now().isoformat())
         return state
 
