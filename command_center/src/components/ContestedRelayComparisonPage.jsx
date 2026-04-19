@@ -53,6 +53,12 @@ const clamp = (value, min, max) => Math.min(max, Math.max(min, value))
 
 const distance = (a, b) => Math.hypot(a.x - b.x, a.y - b.y)
 
+const getIdSeed = (id) => {
+  return String(id || '')
+    .split('')
+    .reduce((total, char, index) => total + char.charCodeAt(0) * (index + 1), 0)
+}
+
 const withAlpha = (hexColor, alpha) => {
   const value = String(hexColor || '').replace('#', '')
   if (value.length !== 6) return hexColor
@@ -88,12 +94,18 @@ const drawHexagon = (ctx, x, y, size) => {
 const buildFormation = (width, height) => {
   const nodes = []
   const pushNode = (id, role, x, y) => {
+    const seed = getIdSeed(id)
     nodes.push({
       id,
       role,
+      baseX: x * width,
+      baseY: y * height,
       x: x * width,
       y: y * height,
-      size: role === 'overwatch' ? 11 : role === 'human' ? 9 : role === 'pathfinder' ? 7.5 : 6.8
+      size: role === 'overwatch' ? 11 : role === 'human' ? 9 : role === 'pathfinder' ? 7.5 : 6.8,
+      phase: seed * 0.11,
+      driftX: role === 'human' ? 1.2 : role === 'overwatch' ? 2.2 : role === 'pathfinder' ? 3.8 : 3,
+      driftY: role === 'human' ? 0.8 : role === 'overwatch' ? 1.6 : role === 'pathfinder' ? 2.8 : 2.3
     })
   }
 
@@ -130,6 +142,68 @@ const buildFormation = (width, height) => {
   pushNode('O1', 'overwatch', 0.52, 0.87)
   pushNode('H1', 'human', 0.14, 0.93)
   return nodes
+}
+
+const animateNodes = (nodes, nowMs, noise, activeEvents) => {
+  const hazardEvents = activeEvents.filter((event) => event.type === 'hazard')
+  const targetEvents = activeEvents.filter((event) => event.type === 'target')
+
+  return nodes.map((node) => {
+    const driftTime = nowMs / 1000
+    let x = node.baseX + Math.sin(driftTime * 0.72 + node.phase) * node.driftX
+    let y = node.baseY + Math.cos(driftTime * 0.56 + node.phase * 0.85) * node.driftY
+
+    const noiseBias = (noise / 100) * 1.2
+    x += Math.cos(driftTime * 1.1 + node.phase * 0.5) * noiseBias
+    y += Math.sin(driftTime * 0.94 + node.phase * 0.4) * noiseBias
+
+    hazardEvents.forEach((event) => {
+      const eventX = event.x * 1
+      const eventY = event.y * 1
+      const dx = x - eventX
+      const dy = y - eventY
+      const eventDistance = Math.hypot(dx, dy) || 1
+      if (eventDistance < 130 && node.role !== 'human' && node.role !== 'overwatch') {
+        const repelStrength = (1 - eventDistance / 130) * (node.role === 'pathfinder' ? 8 : 5)
+        x += (dx / eventDistance) * repelStrength
+        y += (dy / eventDistance) * repelStrength
+      }
+    })
+
+    targetEvents.forEach((event) => {
+      const eventX = event.x * 1
+      const eventY = event.y * 1
+      const dx = eventX - x
+      const dy = eventY - y
+      const eventDistance = Math.hypot(dx, dy) || 1
+      if (eventDistance < 150 && node.role === 'scout') {
+        const attractStrength = (1 - eventDistance / 150) * 2.2
+        x += (dx / eventDistance) * attractStrength
+        y += (dy / eventDistance) * attractStrength
+      }
+    })
+
+    return {
+      ...node,
+      x,
+      y
+    }
+  })
+}
+
+const drawSignalPulse = (ctx, from, to, color, nowMs, phaseOffset = 0, alpha = 0.95) => {
+  const progress = ((nowMs / 900) + phaseOffset) % 1
+  const pulseX = from.x + (to.x - from.x) * progress
+  const pulseY = from.y + (to.y - from.y) * progress
+
+  ctx.save()
+  ctx.fillStyle = withAlpha(color, alpha)
+  ctx.shadowColor = withAlpha(color, 0.55)
+  ctx.shadowBlur = 14
+  ctx.beginPath()
+  ctx.arc(pulseX, pulseY, 3.2, 0, Math.PI * 2)
+  ctx.fill()
+  ctx.restore()
 }
 
 const buildBaseEdges = (nodes, mode) => {
@@ -296,7 +370,14 @@ const buildMetrics = (mode, noise, events, nowMs) => {
 }
 
 const drawScene = (ctx, width, height, mode, noise, events, nowMs) => {
-  const nodes = buildFormation(width, height)
+  const baseNodes = buildFormation(width, height)
+  const activeEvents = events.filter((event) => nowMs - event.createdAt < EVENT_LIFETIME_MS)
+  const eventPoints = activeEvents.map((event) => ({
+    ...event,
+    x: event.x * width,
+    y: event.y * height
+  }))
+  const nodes = animateNodes(baseNodes, nowMs, noise, eventPoints)
   const edges = buildBaseEdges(nodes, mode)
   const metrics = buildMetrics(mode, noise, events, nowMs)
   const byId = Object.fromEntries(nodes.map((node) => [node.id, node]))
@@ -345,14 +426,12 @@ const drawScene = (ctx, width, height, mode, noise, events, nowMs) => {
     ctx.stroke()
   })
 
-  const activeEvents = events.filter((event) => nowMs - event.createdAt < EVENT_LIFETIME_MS)
-
-  activeEvents.forEach((event) => {
+  eventPoints.forEach((event) => {
     const age = nowMs - event.createdAt
     const progress = clamp(age / EVENT_LIFETIME_MS, 0, 1)
     const alpha = 1 - progress
-    const eventX = event.x * width
-    const eventY = event.y * height
+    const eventX = event.x
+    const eventY = event.y
     const baseColor = event.type === 'hazard' ? '#ff627d' : '#ffc96b'
 
     for (let ring = 0; ring < 2; ring += 1) {
@@ -444,21 +523,22 @@ const drawScene = (ctx, width, height, mode, noise, events, nowMs) => {
       }
     }
 
-    highlightedSegments.forEach(([from, to, color, widthPx]) => {
+    highlightedSegments.forEach(([from, to, color, widthPx], index) => {
       ctx.strokeStyle = withAlpha(color, 0.88 * alpha)
       ctx.lineWidth = widthPx
       ctx.beginPath()
       ctx.moveTo(from.x, from.y)
       ctx.lineTo(to.x, to.y)
       ctx.stroke()
+      drawSignalPulse(ctx, from, to, color, nowMs, index * 0.19, alpha)
     })
   })
 
-  nodes.forEach((node) => {
+  nodes.forEach((node, index) => {
     const glowAlpha = node.role === 'overwatch' ? 0.2 : 0.14
     ctx.fillStyle = withAlpha(ROLE_COLORS[node.role], glowAlpha)
     ctx.beginPath()
-    ctx.arc(node.x, node.y, node.size * 2.6, 0, Math.PI * 2)
+    ctx.arc(node.x, node.y, node.size * (2.45 + Math.sin(nowMs / 700 + index * 0.25) * 0.08), 0, Math.PI * 2)
     ctx.fill()
 
     ctx.fillStyle = ROLE_COLORS[node.role]
@@ -496,17 +576,24 @@ function ComparisonCanvas({ mode, noise, events }) {
   const [size, setSize] = useState({ width: 0, height: 0 })
 
   useEffect(() => {
-    const measure = () => {
-      if (!shellRef.current) return
-      const rect = shellRef.current.getBoundingClientRect()
+    const updateSize = (nextWidth, nextHeight) => {
       setSize({
-        width: Math.max(320, Math.floor(rect.width)),
-        height: Math.max(420, Math.floor(rect.height))
+        width: Math.max(320, Math.floor(nextWidth)),
+        height: Math.max(420, Math.floor(nextHeight))
       })
     }
 
+    const measure = () => {
+      if (!shellRef.current) return
+      updateSize(shellRef.current.clientWidth, shellRef.current.clientHeight)
+    }
+
     measure()
-    const observer = new ResizeObserver(measure)
+    const observer = new ResizeObserver((entries) => {
+      const entry = entries[0]
+      if (!entry) return
+      updateSize(entry.contentRect.width, entry.contentRect.height)
+    })
     if (shellRef.current) {
       observer.observe(shellRef.current)
     }
@@ -546,9 +633,9 @@ function ComparisonCanvas({ mode, noise, events }) {
   return (
     <div
       ref={shellRef}
-      className="relative min-h-[420px] overflow-hidden rounded-[24px] border border-cyan-500/15 bg-slate-950/95"
+      className="relative h-[420px] overflow-hidden rounded-[24px] border border-cyan-500/15 bg-slate-950/95 md:h-[460px] xl:h-[500px]"
     >
-      <canvas ref={canvasRef} className="block h-full w-full" />
+      <canvas ref={canvasRef} className="absolute inset-0 block h-full w-full" />
     </div>
   )
 }

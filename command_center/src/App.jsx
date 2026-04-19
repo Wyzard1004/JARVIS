@@ -13,6 +13,7 @@ import StatusPanel from './components/StatusPanel'
 import SoldierSelector from './components/SoldierSelector'
 import CollapsiblePanel from './components/CollapsiblePanel'
 import ContestedRelayComparisonPage from './components/ContestedRelayComparisonPage'
+import SwarmPropagationLabPage from './components/SwarmPropagationLabPage'
 import { getEntityDisplayLabel, sanitizeUnitIdentifiers } from './lib/displayNames'
 
 const normalizeBaseUrl = (value) => String(value || '').trim().replace(/\/+$/, '')
@@ -51,24 +52,40 @@ const resolveScenarioAssetUrl = (assetUrl) => {
 
 const PAGE_COMMAND_CENTER = 'command-center'
 const PAGE_RELAY_COMPARISON = 'relay-comparison'
+const PAGE_PROPAGATION_LAB = 'propagation-lab'
 
 const VIEW_OPTIONS = [
   {
     id: PAGE_COMMAND_CENTER,
     label: 'Command Center',
-    subtitle: 'Live swarm control'
+    subtitle: 'Live swarm control',
+    description: 'Live swarm command, scenario, and relay control',
+    documentTitle: 'JARVIS Command Center'
   },
   {
     id: PAGE_RELAY_COMPARISON,
     label: 'Comparison Lab',
-    subtitle: 'Doctrine simulator'
+    subtitle: 'Doctrine simulator',
+    description: 'Contested relay doctrine and topology comparison',
+    documentTitle: 'JARVIS Relay Comparison Lab'
+  },
+  {
+    id: PAGE_PROPAGATION_LAB,
+    label: 'Propagation Lab',
+    subtitle: 'Mesh stress simulator',
+    description: 'Hop limits, backup links, and reroute pressure in a gateway-centered mesh',
+    documentTitle: 'JARVIS Propagation Stress Lab'
   }
 ]
+
+const getViewOption = (pageId) => {
+  return VIEW_OPTIONS.find((view) => view.id === pageId) || VIEW_OPTIONS[0]
+}
 
 const getPageFromHash = () => {
   if (typeof window === 'undefined') return PAGE_COMMAND_CENTER
   const normalized = String(window.location.hash || '').replace(/^#\/?/, '').trim().toLowerCase()
-  return normalized === PAGE_RELAY_COMPARISON ? PAGE_RELAY_COMPARISON : PAGE_COMMAND_CENTER
+  return getViewOption(normalized).id
 }
 
 const getActiveFullscreenElement = () => {
@@ -628,6 +645,7 @@ function App() {
   const lastPlaybackKeyRef = useRef(null)
   const MAX_RECONNECT_ATTEMPTS = 5
   const RECONNECT_DELAY = 2000
+  const activeView = getViewOption(activePage)
 
   useEffect(() => {
     const syncPageFromHash = () => {
@@ -641,10 +659,8 @@ function App() {
   }, [])
 
   useEffect(() => {
-    document.title = activePage === PAGE_RELAY_COMPARISON
-      ? 'JARVIS Relay Comparison Lab'
-      : 'JARVIS Command Center'
-  }, [activePage])
+    document.title = activeView.documentTitle
+  }, [activeView])
 
   const syncScenarioDrafts = (scenarioInfo, options = {}) => {
     const nextScenarioKey = scenarioInfo?.relative_path || ''
@@ -1387,9 +1403,7 @@ function App() {
           <div>
             <h1 className="text-3xl font-bold">JARVIS Frontend Suite</h1>
             <p className="text-gray-400">
-              {activePage === PAGE_RELAY_COMPARISON
-                ? 'Contested relay doctrine and topology comparison'
-                : 'Live swarm command, scenario, and relay control'}
+              {activeView.description}
             </p>
             <div className="mt-3 flex flex-wrap gap-2">
               {VIEW_OPTIONS.map((view) => {
@@ -1413,6 +1427,7 @@ function App() {
             </div>
           </div>
           <div className={`text-center rounded px-4 py-2 ${connectionStatus === 'connected' ? 'bg-green-900 text-green-400' : 'bg-red-900 text-red-400'}`}>
+            <p className="text-[10px] font-bold uppercase tracking-[0.18em] opacity-80">Live Backend</p>
             <p className="text-sm font-bold">
               {connectionStatus === 'connected' ? 'CONNECTED' : 'DISCONNECTED'}
             </p>
@@ -2016,8 +2031,10 @@ function App() {
           </CollapsiblePanel>
         </div>
         </main>
-      ) : (
+      ) : activePage === PAGE_RELAY_COMPARISON ? (
         <ContestedRelayComparisonPage />
+      ) : (
+        <SwarmPropagationLabPage />
       )}
     </div>
   )
