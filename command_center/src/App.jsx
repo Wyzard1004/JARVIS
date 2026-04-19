@@ -166,6 +166,14 @@ const DEFAULT_SIMULATION_SETTINGS = {
   speed_multiplier: 1
 }
 
+const DEFAULT_SUGGESTED_COMMANDS = [
+  'JARVIS, recon Alpha 1',
+  'JARVIS, recon Bravo 6',
+  'JARVIS, attack Bravo 6',
+  'JARVIS, recon patrol Alpha 1 to Alpha 8',
+  'JARVIS, recon patrol Bravo 2 to Delta 5'
+]
+
 const DEFAULT_COLLAPSED_PANELS = {
   mapMode: false,
   scenarioLoader: false,
@@ -592,6 +600,7 @@ const normalizeSuggestedCommands = (commands) => {
 }
 
 const serializeSuggestedCommands = (commands) => normalizeSuggestedCommands(commands).join('\n')
+const DEFAULT_SUGGESTED_COMMANDS_TEXT = DEFAULT_SUGGESTED_COMMANDS.join('\n')
 
 const getNextNodeId = (nodes, prefix) => {
   const pattern = new RegExp(`^${prefix}-(\\d+)$`)
@@ -1379,6 +1388,9 @@ function App() {
     : `${simulationSlowdownFactor}x slower`
   const activeScenarioInfo = swarmState?.scenario_info || null
   const currentSuggestedCommands = normalizeSuggestedCommands(suggestedCommandsText)
+  const displayedSuggestedCommands = currentSuggestedCommands.length > 0
+    ? currentSuggestedCommands
+    : DEFAULT_SUGGESTED_COMMANDS
   const currentCommandTone = currentCommand ? getCurrentCommandTone(currentCommand) : null
   const currentCommandStatusLabel = currentCommand ? formatMissionStatus(currentCommand.status) : ''
   const currentCommandOriginLabel = currentCommand
@@ -1761,7 +1773,7 @@ function App() {
                           suggestedCommandsDirtyRef.current = true
                         }}
                         className="w-full rounded border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100"
-                        placeholder="One command per line"
+                        placeholder={DEFAULT_SUGGESTED_COMMANDS_TEXT}
                       />
                     </label>
 
@@ -1902,6 +1914,14 @@ function App() {
         </div>
 
         <div className="min-w-0 space-y-4">
+          <div className="rounded border border-gray-700 bg-gray-800 p-4">
+            <h3 className="mb-2 text-lg font-bold">Voice Command</h3>
+            <p className="mb-4 text-xs text-gray-400">
+              Use radio-style phrasing with sectors Alpha through Hotel and grid numbers 1 through 8.
+            </p>
+            <PushToTalkButton onCommand={handleVoiceCommand} activeSoldierLabel={activeSoldierLabel} />
+          </div>
+
           <SoldierSelector
             activeSoldier={activeSoldier}
             availableSoldiers={availableSoldiers}
@@ -1924,26 +1944,22 @@ function App() {
             title="Suggested Commands"
             subtitle={activeScenarioInfo
               ? `Saved with ${activeScenarioInfo.name}`
-              : 'Commands associated with the current map.'}
+              : 'Radio-style examples for Alpha-Hotel and grid 1-8.'}
             collapsed={collapsedPanels.suggestedCommands}
             onToggle={() => togglePanel('suggestedCommands')}
             className="border-gray-700 bg-gray-800"
             bodyClassName="p-4"
           >
-            {currentSuggestedCommands.length === 0 ? (
-              <p className="text-sm text-gray-500">
-                No suggested commands saved for this map yet.
-              </p>
-            ) : (
-              <div className="space-y-2">
-                {currentSuggestedCommands.map((command, index) => (
-                  <div key={`${command}-${index}`} className="rounded border border-cyan-500/30 bg-cyan-500/5 px-3 py-2">
-                    <div className="text-[10px] font-bold uppercase tracking-wide text-cyan-200">Suggestion {index + 1}</div>
-                    <div className="mt-1 text-sm text-gray-100">{command}</div>
+            <div className="space-y-2">
+              {displayedSuggestedCommands.map((command, index) => (
+                <div key={`${command}-${index}`} className="rounded border border-cyan-500/30 bg-cyan-500/5 px-3 py-2">
+                  <div className="text-[10px] font-bold uppercase tracking-wide text-cyan-200">
+                    {currentSuggestedCommands.length > 0 ? `Suggestion ${index + 1}` : `Template ${index + 1}`}
                   </div>
-                ))}
-              </div>
-            )}
+                  <div className="mt-1 text-sm text-gray-100">{command}</div>
+                </div>
+              ))}
+            </div>
             <p className="mt-3 text-[11px] text-gray-500">
               Edit these in Scenario Loader, then save the scenario to persist them with the map.
             </p>
@@ -1998,11 +2014,6 @@ function App() {
           >
             <GridLegend activeDrones={swarmState?.nodes || []} mapMode={mapMode} embedded />
           </CollapsiblePanel>
-
-          <div className="bg-gray-800 rounded border border-gray-700 p-4">
-            <h3 className="text-lg font-bold mb-4">🎤 Voice Command</h3>
-            <PushToTalkButton onCommand={handleVoiceCommand} activeSoldierLabel={activeSoldierLabel} />
-          </div>
 
           <CollapsiblePanel
             title="Recent Commands"
