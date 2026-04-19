@@ -34,6 +34,7 @@ from .map_geometry import (
     normalize_rect_footprint,
 )
 from .mission_event_bus import EventBus, EventSeverity, EventType, MissionEvent
+from .runtime_paths import ensure_runtime_storage
 
 
 class SimpleGraph:
@@ -101,7 +102,8 @@ class SwarmCoordinator:
         self.graph = nx.Graph() if nx is not None else SimpleGraph()
         self.event_bus = EventBus(max_history=1000)
 
-        default_config = Path(__file__).parent.parent / "config" / "swarm_initial_state.json"
+        runtime_paths = ensure_runtime_storage()
+        default_config = runtime_paths["default_scenario_file"]
         self._config_path = Path(config_path) if config_path else default_config
         self._config = self._load_config(str(self._config_path)) if self._config_path else None
         if self._config is None:

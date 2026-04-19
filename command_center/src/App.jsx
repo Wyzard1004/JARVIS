@@ -37,8 +37,9 @@ const resolveWebSocketUrl = () => {
     return wsUrl.toString()
   }
 
-  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-  return `${protocol}//${window.location.hostname}:8000/ws/swarm`
+  const wsUrl = new URL('/ws/swarm', window.location.origin)
+  wsUrl.protocol = wsUrl.protocol === 'https:' ? 'wss:' : 'ws:'
+  return wsUrl.toString()
 }
 
 const resolveScenarioAssetUrl = (assetUrl) => {

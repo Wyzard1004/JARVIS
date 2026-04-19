@@ -197,6 +197,96 @@ That script opens backend, listener, and frontend terminals for the current demo
 - The live relay hardware path is USB serial plus ESP-NOW.
 - MQTT is not the primary deployment story in the current repo.
 
+## Hosted Deploy Options
+
+### Deploy The Command Center On Vercel
+
+Vercel is a good fit for the `command_center` React app, but it is **not a good primary host for the current FastAPI backend**.
+
+Why the split matters:
+
+- the backend keeps live swarm state in memory
+- `ws://.../ws/swarm` is a real server-managed WebSocket, not a hosted pub/sub service
+- map overlays and saved scenarios are written to local disk under `base_station/`
+
+That means the practical deployment shape is:
+
+- **Vercel** for `command_center/`
+- **a stateful host** for `base_station/` such as a VM, Jetson, Railway, Fly.io, or Render service with persistent storage and WebSocket support
+
+This repo now includes a root `vercel.json` that builds the Vite app from `command_center/`.
+
+Recommended Vercel environment variables:
+
+```bash
+VITE_API_BASE_URL=https://your-backend.example.com
+# Optional if your websocket endpoint is on a different host/path.
+VITE_WEBSOCKET_URL=wss://your-backend.example.com/ws/swarm
+```
+
+Production checklist:
+
+- `Required`: `VITE_API_BASE_URL`
+- `Optional`: `VITE_WEBSOCKET_URL` if your websocket endpoint is not simply `/ws/swarm` on the same backend host
+- `Template starting point`: `command_center/env.remote.example`
+
+Deploy steps:
+
+1. Push this repo to GitHub, GitLab, or Bitbucket.
+2. In Vercel, create a new project from that repo.
+3. Keep the project's **Root Directory** at the repo root so Vercel uses the included `vercel.json`.
+4. Add `VITE_API_BASE_URL` pointing at your deployed backend.
+5. Add `VITE_WEBSOCKET_URL` if the websocket host/path differs from the API host.
+6. Deploy. Vercel will run the root build, install from `command_center/`, and publish `command_center/dist`.
+
+Notes:
+
+- if `VITE_WEBSOCKET_URL` is omitted, the app derives it from `VITE_API_BASE_URL`
+- if neither variable is set, the frontend now falls back to same-origin `/api` and `/ws`, which works well behind a reverse proxy
+- the existing `command_center/env.remote.example` file is a good starting point for Vercel env setup
+
+If you want to experiment with putting the backend on Vercel anyway, expect to rework the WebSocket transport, persistent state handling, and scenario/overlay storage first.
+
+### Deploy The Backend On Render
+
+The repo now includes:
+
+- `base_station/Dockerfile` for the FastAPI service
+- `base_station/requirements.deploy.txt` with cloud-friendly backend dependencies
+- `render.yaml` for a Render Blueprint deployment
+
+Recommended Render flow:
+
+1. Push the repo to GitHub.
+2. In Render, create a new Blueprint or Web Service from the repo.
+3. If you use the Blueprint, Render will pick up `render.yaml` and configure the Docker deploy, `/health` health check, and a persistent disk mounted at `/data`.
+4. If you create the service manually instead, point Render at `base_station/Dockerfile`, set `PORT=10000`, `JARVIS_DATA_DIR=/data`, and attach a persistent disk at `/data`.
+5. Set optional secrets only if you use them in production, such as `ELEVENLABS_API_KEY`, `OLLAMA_BASE_URL`, or MQTT-related env vars.
+6. After the backend is live, copy its public HTTPS URL into Vercel as `VITE_API_BASE_URL`.
+
+Important deployment behavior:
+
+- `JARVIS_DATA_DIR=/data` redirects saved scenarios and uploaded overlay images into writable persistent storage
+- `JARVIS_RELAY_ENABLED=false` is a sensible default for hosted demos unless you are also exposing the relay bridge path intentionally
+- if you skip the persistent disk, scenario saves and uploaded overlays will be ephemeral across restarts/redeploys
+
+Production checklist:
+
+- `Required`: `PORT=10000`
+- `Required`: `JARVIS_DATA_DIR=/data`
+- `Recommended`: `JARVIS_RELAY_ENABLED=false`
+- `Recommended`: `JARVIS_NETWORK_PROFILE=baseline`
+- `Optional`: `OLLAMA_BASE_URL` and `OLLAMA_MODEL` if the hosted service can reach an Ollama instance
+- `Optional`: `ELEVENLABS_API_KEY` if you want speech transcription / TTS
+- `Optional`: `MQTT_BROKER_HOST`, `MQTT_BROKER_PORT`, and `MQTT_CLIENT_ID` for hardware messaging
+- `Template starting point`: `.env.example` plus the values in `render.yaml`
+
+### Verify
+
+- FastAPI health endpoint responds on `/health`
+- React UI loads and connects to the backend WebSocket
+- Scenario saves and overlay uploads persist if you attach storage on the backend host
+
 ## Docs
 
 - [docs/README.md](docs/README.md)
