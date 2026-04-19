@@ -120,6 +120,7 @@ class SwarmCoordinator:
         self._simulation_slowdown_factor = self.DEFAULT_SIMULATION_SLOWDOWN_FACTOR
         self._base_nodes: List[Dict] = []
         self._map_overlay: Dict = normalize_overlay(None)
+        self._suggested_commands: List[str] = []
         self._enemies: List[Dict] = []
         self._structures: List[Dict] = []
         self._special_entities: List[Dict] = []
@@ -185,6 +186,7 @@ class SwarmCoordinator:
     def _build_default_config(self) -> Dict:
         return {
             "scenario": "Default Continuous Scenario",
+            "suggested_commands": [],
             "coordinate_space_size": 1000,
             "map_overlay": normalize_overlay(None),
             "drones": [],
@@ -201,6 +203,21 @@ class SwarmCoordinator:
             normalized["asset_url"] = f"/scenario-assets/{Path(str(asset_path)).name}"
         if normalized.get("asset_url") and overlay and "visible" not in overlay:
             normalized["visible"] = True
+        return normalized
+
+    def _normalize_suggested_commands(self, commands: List[str] | str | None) -> List[str]:
+        if isinstance(commands, str):
+            values = commands.splitlines()
+        elif isinstance(commands, list):
+            values = commands
+        else:
+            values = []
+
+        normalized: List[str] = []
+        for value in values:
+            command = str(value or "").strip()
+            if command and command not in normalized:
+                normalized.append(command)
         return normalized
 
     def _normalize_position(self, point: Iterable[float] | None) -> Tuple[float, float]:
@@ -297,6 +314,7 @@ class SwarmCoordinator:
         self.event_bus = EventBus(max_history=1000)
         self._base_nodes = deepcopy(self._config.get("drones", []))
         self._map_overlay = self._normalize_map_overlay(self._config.get("map_overlay"))
+        self._suggested_commands = self._normalize_suggested_commands(self._config.get("suggested_commands"))
         self._enemies = self._normalize_entities(self._config.get("enemies", []), entity_type="enemy")
         self._structures = self._normalize_entities(self._config.get("structures", []), entity_type="structure")
         self._special_entities = self._normalize_entities(self._config.get("special_entities", []), entity_type="special_entity")
@@ -327,6 +345,8 @@ class SwarmCoordinator:
             "path": str(self._config_path),
             "relative_path": str(relative_path),
             "is_blank": len(self._base_nodes) == 0 and len(self._structures) == 0 and len(self._enemies) == 0 and len(self._special_entities) == 0,
+            "suggested_commands": deepcopy(self._suggested_commands),
+            "suggested_command_count": len(self._suggested_commands),
             "node_count": len(self._base_nodes),
             "structure_count": len(self._structures),
             "enemy_count": len(self._enemies),
@@ -335,6 +355,7 @@ class SwarmCoordinator:
 
     def _sync_config_snapshot(self) -> Dict:
         self._config["coordinate_space_size"] = int(self.space.SPACE_SIZE)
+        self._config["suggested_commands"] = deepcopy(self._suggested_commands)
         self._config["map_overlay"] = deepcopy(self._map_overlay)
         self._config["drones"] = deepcopy(self._base_nodes)
         self._config["enemies"] = deepcopy(self._enemies)
@@ -351,6 +372,8 @@ class SwarmCoordinator:
             self._rebuild_runtime_nodes()
         if "map_overlay" in payload:
             self._map_overlay = self._normalize_map_overlay(payload.get("map_overlay"))
+        if "suggested_commands" in payload:
+            self._suggested_commands = self._normalize_suggested_commands(payload.get("suggested_commands"))
         if "structures" in payload:
             self._structures = self._normalize_entities(clone_editor_entities(payload.get("structures")), entity_type="structure")
         if "enemies" in payload:
@@ -366,9 +389,16 @@ class SwarmCoordinator:
         self._sync_config_snapshot()
         return deepcopy(self._map_overlay)
 
-    def save_scenario(self, target_path: str | Path | None = None, scenario_name: str | None = None) -> Path:
+    def save_scenario(
+        self,
+        target_path: str | Path | None = None,
+        scenario_name: str | None = None,
+        suggested_commands: List[str] | str | None = None,
+    ) -> Path:
         if scenario_name:
             self._config["scenario"] = str(scenario_name).strip()
+        if suggested_commands is not None:
+            self._suggested_commands = self._normalize_suggested_commands(suggested_commands)
         if target_path is not None:
             self._config_path = Path(target_path)
         snapshot = self._sync_config_snapshot()

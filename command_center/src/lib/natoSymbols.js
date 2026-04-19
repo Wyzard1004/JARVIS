@@ -228,7 +228,6 @@ export const NATO_UNIT_LEGEND_ITEMS = [
 export const MAP_MARKER_LEGEND_ITEMS = [
   MAP_SYMBOLS['neutral-building'],
   MAP_SYMBOLS['neutral-warehouse'],
-  MAP_SYMBOLS['neutral-bridge'],
   MAP_SYMBOLS['poi-downed-aircraft'],
   MAP_SYMBOLS['poi-cache']
 ]

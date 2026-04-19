@@ -269,12 +269,10 @@ class JetsonWakeListener:
 
     def _submit_command(self, wav_bytes: bytes) -> None:
         try:
-            form_data = {}
+            form_data = {"input_source": "jetson-wakeword"}
             if self.operator_node:
-                form_data = {
-                    "origin": self.operator_node,
-                    "operator_node": self.operator_node,
-                }
+                form_data["origin"] = self.operator_node
+                form_data["operator_node"] = self.operator_node
             duration_seconds = 0.0
             if self.channels > 0 and self._device_sample_rate > 0:
                 duration_seconds = len(wav_bytes) / (2 * self.channels * self._device_sample_rate)

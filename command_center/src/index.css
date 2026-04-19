@@ -11,3 +11,41 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
+
+.map-shell {
+  position: relative;
+}
+
+.map-shell-frame,
+.map-shell-stage {
+  width: 100%;
+}
+
+.map-shell:fullscreen,
+.map-shell:-webkit-full-screen {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  padding: 1rem;
+  border: 0;
+  border-radius: 0;
+  background:
+    radial-gradient(circle at top, rgba(14, 165, 233, 0.14), rgba(2, 6, 23, 0.96) 58%),
+    #020617;
+}
+
+.map-shell:fullscreen .map-shell-frame,
+.map-shell:-webkit-full-screen .map-shell-frame {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.map-shell:fullscreen .map-shell-stage,
+.map-shell:-webkit-full-screen .map-shell-stage {
+  width: min(100%, calc(100vh - 7rem), calc(100vw - 3rem));
+  margin: 0 auto;
+}

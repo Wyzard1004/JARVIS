@@ -172,6 +172,57 @@ class SwarmEditorStateTests(unittest.TestCase):
             self.assertEqual(len(saved_payload["drones"]), 1)
             self.assertEqual(saved_payload["drones"][0]["id"], "recon-1")
 
+    def test_suggested_commands_are_normalized_in_state_and_saved(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config_path = Path(temp_dir) / "scenario.json"
+            config_path.write_text(
+                json.dumps(
+                    {
+                        "scenario": "Metadata Test",
+                        "suggested_commands": ["scan grid alpha"],
+                        "coordinate_space_size": 1000,
+                        "map_overlay": {
+                            "asset_url": None,
+                            "asset_path": None,
+                            "opacity": 0.72,
+                            "visible": False,
+                        },
+                        "drones": [],
+                        "enemies": [],
+                        "structures": [],
+                        "special_entities": [],
+                        "initial_events": [],
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            swarm = SwarmCoordinator(config_path=str(config_path))
+            state = swarm.apply_editor_state(
+                {
+                    "suggested_commands": [
+                        "  scan grid alpha  ",
+                        "",
+                        "hold position near bridge",
+                        "scan grid alpha",
+                    ]
+                }
+            )
+
+            self.assertEqual(
+                state["scenario_info"]["suggested_commands"],
+                ["scan grid alpha", "hold position near bridge"],
+            )
+            self.assertEqual(state["scenario_info"]["suggested_command_count"], 2)
+
+            save_path = swarm.save_scenario()
+            saved_payload = json.loads(save_path.read_text(encoding="utf-8"))
+
+            self.assertEqual(
+                saved_payload["suggested_commands"],
+                ["scan grid alpha", "hold position near bridge"],
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

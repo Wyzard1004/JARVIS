@@ -1,5 +1,10 @@
 {
   "scenario": "Valley Out of Zarichne",
+  "suggested_commands": [
+    "jarvis scan the northern ridgeline",
+    "jarvis move to the valley mouth",
+    "jarvis avoid the main road kill zone"
+  ],
   "timestamp_ms": 0,
   "coordinate_space_size": 1000,
   "map_overlay": {

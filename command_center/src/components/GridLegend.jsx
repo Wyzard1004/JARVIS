@@ -10,7 +10,7 @@ import React from 'react'
 import { getEntityDisplayLabel, getEntityTypeLabel } from '../lib/displayNames'
 import { MAP_MARKER_LEGEND_ITEMS, NATO_UNIT_LEGEND_ITEMS } from '../lib/natoSymbols'
 
-function GridLegend({ activeDrones = [], mapMode = 'nato' }) {
+function GridLegend({ activeDrones = [], mapMode = 'nato', embedded = false }) {
   const renderUnitPreview = (symbol) => {
     if (mapMode === 'atak') {
       return (
@@ -44,7 +44,7 @@ function GridLegend({ activeDrones = [], mapMode = 'nato' }) {
   }
 
   return (
-    <div className="w-full space-y-4 p-4 bg-gray-700 border border-gray-600 rounded">
+    <div className={embedded ? 'w-full space-y-4' : 'w-full space-y-4 p-4 bg-gray-700 border border-gray-600 rounded'}>
       {/* Unit Symbology */}
       <div>
         <div className="mb-2">
