@@ -783,17 +783,26 @@ def _relay_priority_for_goal(goal: str | None) -> str:
     return "low"
 
 
-def _relay_packet_kind_for_event(event_name: str | None) -> str | None:
-    mapping = {
-        "command_pending": "COMMAND_STAGED",
-        "gossip_update": "COMMAND_EXECUTE",
-        "command_canceled": "COMMAND_CANCEL",
-    }
-    return mapping.get((event_name or "").strip())
+def _relay_packet_kind_for_event(event_name: str | None, relay_command: Dict | None = None) -> str | None:
+    normalized_event = (event_name or "").strip()
+    if normalized_event == "command_pending":
+        return "COMMAND_STAGED"
+    if normalized_event == "command_canceled":
+        return "COMMAND_CANCEL"
+    if normalized_event != "gossip_update":
+        return None
+
+    relay_command = relay_command or {}
+    goal = str(relay_command.get("goal") or relay_command.get("action_code") or "").upper()
+    execution_state = str(relay_command.get("execution_state") or "").upper()
+
+    if goal == "ATTACK_AREA" and execution_state == "EXECUTED":
+        return "COMMAND_EXECUTE"
+    return "COMMAND_DIRECT"
 
 
 def _build_relay_bridge_payload(event_payload: Dict, relay_command: Dict, scope_key: str) -> Dict | None:
-    packet_kind = _relay_packet_kind_for_event(event_payload.get("event"))
+    packet_kind = _relay_packet_kind_for_event(event_payload.get("event"), relay_command)
     if not packet_kind:
         return None
 
@@ -893,6 +902,7 @@ async def _dispatch_swarm_command(transcribed_text: str, swarm_intent: Dict, par
             return {
                 "status": "ignored",
                 "message": "No pending destructive command awaiting EXECUTE.",
+                "origin": scope_key,
                 "transcribed_text": transcribed_text,
                 "parsed_command": parsed_command,
                 "confirmation_text": confirmation_text,
@@ -928,6 +938,7 @@ async def _dispatch_swarm_command(transcribed_text: str, swarm_intent: Dict, par
         return {
             "status": "ignored",
             "message": "Command could not be safely interpreted",
+            "origin": scope_key,
             "transcribed_text": transcribed_text,
             "parsed_command": parsed_command,
             "confirmation_text": confirmation_text,

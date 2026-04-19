@@ -212,6 +212,7 @@ String normalizeToken(const String& input) {
 uint8_t packetKindFromString(const String& value) {
   const String normalized = normalizeToken(value);
   if (normalized == "COMMAND_STAGED") return RELAY_KIND_COMMAND_STAGED;
+  if (normalized == "COMMAND_DIRECT") return RELAY_KIND_COMMAND_DIRECT;
   if (normalized == "COMMAND_EXECUTE") return RELAY_KIND_COMMAND_EXECUTE;
   if (normalized == "COMMAND_CANCEL") return RELAY_KIND_COMMAND_CANCEL;
   if (normalized == "ACK") return RELAY_KIND_ACK;
@@ -341,7 +342,10 @@ bool handleRelaySerialPayload(const String& encodedPayload) {
   if (static_cast<bool>(doc["ack_required"] | true)) {
     packet.flags |= RELAY_FLAG_ACK_REQUIRED;
   }
-  if (packet.kind == RELAY_KIND_COMMAND_STAGED || packet.kind == RELAY_KIND_COMMAND_EXECUTE || packet.kind == RELAY_KIND_COMMAND_CANCEL) {
+  if (packet.kind == RELAY_KIND_COMMAND_STAGED ||
+      packet.kind == RELAY_KIND_COMMAND_DIRECT ||
+      packet.kind == RELAY_KIND_COMMAND_EXECUTE ||
+      packet.kind == RELAY_KIND_COMMAND_CANCEL) {
     packet.flags |= RELAY_FLAG_FORWARDABLE;
   }
 
