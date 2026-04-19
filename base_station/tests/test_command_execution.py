@@ -204,6 +204,43 @@ class SwarmCommandExecutionTests(unittest.TestCase):
             self.assertIn(frozenset(("compute-1", "attack-1")), edge_pairs)
             self.assertIn("attack-1", result["active_nodes"])
 
+    def test_patrol_loop_does_not_snap_recon_back_to_origin(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config_path = Path(temp_dir) / "patrol_loop.json"
+            _write_test_scenario(
+                config_path,
+                drones=[
+                    {
+                        "id": "recon-1",
+                        "type": "recon",
+                        "role": "recon-drone",
+                        "behavior": "lurk",
+                        "position": [0, 0],
+                        "speed": 10,
+                        "detection_radius": 220,
+                    }
+                ],
+            )
+
+            swarm = SwarmCoordinator(config_path=str(config_path))
+            swarm.set_drone_behavior(
+                "recon-1",
+                "patrol",
+                [(0, 0), (10, 0), (10, 10), (10, 0)],
+            )
+
+            swarm.advance_simulation(now_monotonic=0.0)
+            swarm.advance_simulation(now_monotonic=1.0)
+            swarm.advance_simulation(now_monotonic=2.0)
+            swarm.advance_simulation(now_monotonic=3.0)
+            swarm.advance_simulation(now_monotonic=3.5)
+
+            looping_position = swarm.get_drone_position("recon-1")
+
+            self.assertIsNotNone(looping_position)
+            self.assertAlmostEqual(looping_position[0], 10.0, places=2)
+            self.assertGreater(looping_position[1], 4.0)
+
     def test_attack_drones_destroy_one_close_target_per_tick(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             config_path = Path(temp_dir) / "attack_sequence.json"

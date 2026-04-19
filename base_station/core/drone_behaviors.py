@@ -102,20 +102,30 @@ class DroneMovement:
             return
 
         waypoint_idx = state.waypoint_index
+        if waypoint_idx >= len(waypoints):
+            waypoint_idx = len(waypoints) - 1
+            state.waypoint_index = waypoint_idx
+
+        wrapped_patrol = False
         if waypoint_idx >= len(waypoints) - 1:
-            # Reached end of path
             if state.behavior == "transit":
                 state.behavior = "lurk"
+                state.progress = 0.0
+                return
+
+            matching_idx = self._matching_waypoint_index(waypoints, waypoint_idx)
+            if matching_idx is not None:
+                waypoint_idx = matching_idx
+                state.waypoint_index = matching_idx
             else:
-                # Loop patrol
-                state.waypoint_index = 0
+                wrapped_patrol = True
+
+        next_waypoint_idx = 0 if wrapped_patrol else waypoint_idx + 1
+        if next_waypoint_idx >= len(waypoints):
             return
 
-        # Calculate movement progress
-        current_pos = state.position
-        next_waypoint = waypoints[waypoint_idx + 1]
-
         segment_start = waypoints[waypoint_idx]
+        next_waypoint = waypoints[next_waypoint_idx]
         distance = self.coordinate_space.distance(segment_start, next_waypoint)
 
         # Time to traverse in continuous world-space units
@@ -123,7 +133,7 @@ class DroneMovement:
 
         if travel_time_sec <= 0:
             # Already at waypoint, move to next
-            state.waypoint_index += 1
+            state.waypoint_index = next_waypoint_idx
             state.progress = 0.0
             return
 
@@ -133,11 +143,25 @@ class DroneMovement:
         if new_progress >= 1.0:
             # Reached waypoint
             state.position = next_waypoint
-            state.waypoint_index += 1
+            state.waypoint_index = next_waypoint_idx
             state.progress = 0.0
         else:
             state.position = self.coordinate_space.interpolate(segment_start, next_waypoint, new_progress)
             state.progress = new_progress
+
+    def _matching_waypoint_index(
+        self,
+        waypoints: List[Tuple[float, float]],
+        waypoint_idx: int,
+    ) -> Optional[int]:
+        if waypoint_idx <= 0 or waypoint_idx >= len(waypoints):
+            return None
+
+        waypoint = waypoints[waypoint_idx]
+        for index, candidate in enumerate(waypoints[:waypoint_idx]):
+            if self.coordinate_space.distance(candidate, waypoint) <= 1e-6:
+                return index
+        return None
 
     def set_behavior(
         self,

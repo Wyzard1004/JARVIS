@@ -54,25 +54,40 @@ function SoldierSelector({ activeSoldier, availableSoldiers = [], onSoldierChang
       </div>
 
       {/* Soldier Selection Buttons */}
-      <div className="mb-4 flex flex-col gap-3 sm:flex-row">
-        {soldiers.map((soldier) => (
-          <button
-            key={soldier.id}
-            onClick={() => onSoldierChange(soldier.id)}
-            className={`
-              flex-1 py-2 px-3 rounded-lg font-semibold transition-all
-              ${activeSoldier === soldier.id
-                ? `${soldier.color} text-white shadow-lg scale-105`
-                : "bg-gray-700 text-gray-300 hover:bg-gray-600"
-              }
-            `}
-          >
-            <span className={`inline-block w-2 h-2 rounded-full mr-2 ${
-              activeSoldier === soldier.id ? "bg-white" : "bg-gray-500"
-            }`}></span>
-            {soldier.label}
-          </button>
-        ))}
+      <div className="mb-4">
+        <div className="mb-2 flex items-center justify-between gap-3 text-[11px] font-semibold uppercase tracking-[0.18em] text-gray-500">
+          <span>Operators</span>
+          <span>{soldiers.length} Available</span>
+        </div>
+        <div className="max-w-full overflow-x-auto rounded-lg border border-gray-700 bg-gray-950/60 p-2">
+          <div className="flex w-max min-w-full gap-2">
+            {soldiers.map((soldier) => (
+              <button
+                key={soldier.id}
+                onClick={() => onSoldierChange(soldier.id)}
+                className={`
+                  w-40 shrink-0 rounded-lg border px-3 py-2 text-left font-semibold transition-all
+                  ${activeSoldier === soldier.id
+                    ? `${soldier.color} border-transparent text-white shadow-lg`
+                    : "border-gray-700 bg-gray-700 text-gray-300 hover:bg-gray-600"
+                  }
+                `}
+              >
+                <div className="flex items-center gap-2">
+                  <span className={`inline-block h-2 w-2 shrink-0 rounded-full ${
+                    activeSoldier === soldier.id ? "bg-white" : "bg-gray-500"
+                  }`}></span>
+                  <span className="truncate">{soldier.label}</span>
+                </div>
+                <div className={`mt-1 text-[10px] uppercase tracking-[0.16em] ${
+                  activeSoldier === soldier.id ? "text-white/80" : "text-gray-400"
+                }`}>
+                  {soldier.id}
+                </div>
+              </button>
+            ))}
+          </div>
+        </div>
       </div>
 
       {/* Status Display */}

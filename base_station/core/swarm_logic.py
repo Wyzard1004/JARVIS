@@ -567,6 +567,20 @@ class SwarmCoordinator:
     def get_drone_position(self, drone_id: str) -> Optional[Tuple[float, float]]:
         return self._drone_positions.get(drone_id)
 
+    def _matching_waypoint_index(
+        self,
+        waypoints: List[List[float] | Tuple[float, float]],
+        waypoint_index: int,
+    ) -> Optional[int]:
+        if waypoint_index <= 0 or waypoint_index >= len(waypoints):
+            return None
+
+        waypoint = tuple(waypoints[waypoint_index])
+        for index, candidate in enumerate(waypoints[:waypoint_index]):
+            if self.space.distance(tuple(candidate), waypoint) <= 1e-6:
+                return index
+        return None
+
     def set_drone_behavior(self, drone_id: str, behavior: str, waypoints: Optional[List[Tuple[float, float]]] = None) -> None:
         if drone_id not in self._drone_behaviors:
             return
@@ -592,20 +606,35 @@ class SwarmCoordinator:
                 continue
 
             waypoint_index = behavior["waypoint_index"]
+            if waypoint_index >= len(waypoints):
+                waypoint_index = len(waypoints) - 1
+                behavior["waypoint_index"] = waypoint_index
+
+            wrapped_patrol = False
             if waypoint_index >= len(waypoints) - 1:
                 if current == "transit":
                     behavior["current"] = "lurk"
+                    behavior["progress"] = 0.0
+                    continue
+
+                matching_index = self._matching_waypoint_index(waypoints, waypoint_index)
+                if matching_index is not None:
+                    waypoint_index = matching_index
+                    behavior["waypoint_index"] = matching_index
                 else:
-                    behavior["waypoint_index"] = 0
+                    wrapped_patrol = True
+
+            next_waypoint_index = 0 if wrapped_patrol else waypoint_index + 1
+            if next_waypoint_index >= len(waypoints):
                 continue
 
             start = tuple(waypoints[waypoint_index])
-            end = tuple(waypoints[waypoint_index + 1])
+            end = tuple(waypoints[next_waypoint_index])
             distance = self.space.distance(start, end)
             speed = float(behavior.get("speed", 0.0))
             if distance <= 0.0 or speed <= 0.0:
                 self._drone_positions[drone_id] = end
-                behavior["waypoint_index"] += 1
+                behavior["waypoint_index"] = next_waypoint_index
                 behavior["progress"] = 0.0
                 continue
 
@@ -613,7 +642,7 @@ class SwarmCoordinator:
             new_progress = behavior["progress"] + (delta_sec / travel_time)
             if new_progress >= 1.0:
                 self._drone_positions[drone_id] = end
-                behavior["waypoint_index"] += 1
+                behavior["waypoint_index"] = next_waypoint_index
                 behavior["progress"] = 0.0
             else:
                 self._drone_positions[drone_id] = self.space.interpolate(start, end, new_progress)
