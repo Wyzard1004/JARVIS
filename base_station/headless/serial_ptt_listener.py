@@ -107,13 +107,14 @@ class JetsonSerialPTTListener:
                 print(f"[PTT] Start event received: {event}")
                 self._write_serial("LISTENING")
                 wav_bytes = self._record_until_release()
-                self._write_serial("IDLE")
 
                 if wav_bytes is None:
+                    self._write_serial("READY")
                     print("[PTT] Recording cancelled or too short")
                     self._cooldown()
                     continue
 
+                self._write_serial("PROCESSING")
                 self._submit_command(wav_bytes)
                 self._cooldown()
         finally:

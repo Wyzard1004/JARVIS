@@ -32,6 +32,14 @@ Best current speaking habits:
 - avoid filler words
 - prefer one command per transmission
 
+ESP32 LED meaning in the current button demo:
+
+- slow heartbeat: powered on and ready for PTT
+- solid on: currently recording while the button is held
+- fast blink: processing the last transmission on the Jetson
+- two short blinks: command accepted, then returns to ready heartbeat
+- four short blinks: error, then returns to ready heartbeat
+
 ## Works With The Current Parser Today
 
 These match the implemented parser in [base_station/core/ai_bridge.py](</C:/Users/richa/OneDrive - PennO365/JARVIS/JARVIS/base_station/core/ai_bridge.py:1>):
