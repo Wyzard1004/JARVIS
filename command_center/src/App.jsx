@@ -21,35 +21,12 @@ function App() {
   const [activeSoldier, setActiveSoldier] = useState('soldier-1')
   const [soldierStatus, setSoldierStatus] = useState(null)
   const [selectedDrone, setSelectedDrone] = useState(null)
-  const [batteryLevels, setBatteryLevels] = useState({}) // Persistent battery levels across renders
   const wsRef = React.useRef(null)
   const reconnectTimeoutRef = React.useRef(null)
   const reconnectAttemptsRef = React.useRef(0)
   const isCleaningUpRef = React.useRef(false)
   const MAX_RECONNECT_ATTEMPTS = 5
   const RECONNECT_DELAY = 2000 // 2 seconds
-
-  // Initialize random battery once per drone ID and keep it stable
-  useEffect(() => {
-    if (!swarmState) return
-
-    const droneIds = [
-      ...((swarmState.drones || []).map(d => d.id)),
-      ...((swarmState.nodes || []).map(n => n.id))
-    ]
-
-    if (droneIds.length === 0) return
-
-    setBatteryLevels(prev => {
-      const next = { ...prev }
-      for (const id of droneIds) {
-        if (next[id] === undefined) {
-          next[id] = Math.floor(Math.random() * 30) + 70
-        }
-      }
-      return next
-    })
-  }, [swarmState])
 
   // Initialize WebSocket connection to FastAPI backend
   useEffect(() => {
@@ -387,7 +364,6 @@ function App() {
               drone={(swarmState.drones || []).find(d => d.id === selectedDrone) ||
                      (swarmState.nodes?.find(n => n.id === selectedDrone))}
               commsStatus="online"
-              batteryLevels={batteryLevels}
             />
           )}
 

@@ -20,13 +20,17 @@ export class Entity {
     this.id = id
     this.type = type // 'drone', 'enemy', 'structure', 'poi'
     this.position = position // [x, y] in continuous 1000×1000 coordinate system
+    this.label = options.label || id
     this.allegiance = options.allegiance || 'neutral' // 'allied', 'enemy', 'neutral'
     this.status = options.status || 'active' // 'active', 'destroyed', 'inactive'
     this.size = options.size || 1 // Relative size (1 = normal)
     this.shape = options.shape || 'circle' // 'circle', 'square', 'diamond', 'triangle', 'star', 'rectangle'
     this.color = options.color || '#999999'
+    this.renderSize = options.renderSize || 12
+    this.opacity = options.opacity ?? 1
     this.blocksLoS = options.blocksLoS || false // Does this entity block line of sight?
     this.transmissionRange = options.transmissionRange || 0 // Euclidean distance in 1000×1000 space
+    this.detectionRadius = options.detectionRadius || 0
     this.revealed = options.revealed !== false // For hidden entities
   }
 
@@ -124,27 +128,38 @@ export class Entity {
  */
 export class Drone extends Entity {
   constructor(id, droneType, position, options = {}) {
+    const defaultShape = {
+      soldier: 'square',
+      compute: 'diamond',
+      recon: 'triangle',
+      attack: 'star'
+    }[droneType] || 'circle'
+    const defaultColor = {
+      soldier: '#8B5CF6',
+      compute: '#1E3A8A',
+      recon: '#7DD3FC',
+      attack: '#7DD3FC'
+    }[droneType] || '#999999'
+    const defaultRenderSize = {
+      soldier: 14,
+      compute: 16,
+      recon: 13,
+      attack: 15
+    }[droneType] || 12
+    const defaultTransmissionRange = {
+      soldier: 190,
+      compute: 420,
+      recon: 170,
+      attack: 160
+    }[droneType] || 250
+
     super(id, 'drone', position, {
       allegiance: 'allied',
-      shape: {
-        soldier: 'square',
-        compute: 'diamond',
-        recon: 'triangle',
-        attack: 'star'
-      }[droneType] || 'circle',
-      color: {
-        soldier: '#7B68EE',    // Medium slate blue (cool)
-        compute: '#4169E1',    // Royal blue (cool)
-        recon: '#87CEEB',      // Sky blue (cool)
-        attack: '#00BFFF'      // Deep sky blue (cool)
-      }[droneType] || '#999999',
-      transmissionRange: {
-        soldier: 500,      // 4 cells (125 units/cell = 500), general range
-        compute: 1200,     // 9.6 cells, long-range relay
-        recon: 300,        // 2.4 cells, short range
-        attack: 250        // 2 cells, fast and aggressive, very short range
-      }[droneType] || 250,
-      ...options
+      ...options,
+      shape: options.shape ?? defaultShape,
+      color: options.color ?? defaultColor,
+      renderSize: options.renderSize ?? defaultRenderSize,
+      transmissionRange: options.transmissionRange ?? defaultTransmissionRange
     })
     this.droneType = droneType
     this.behavior = options.behavior || 'lurk'
@@ -156,20 +171,32 @@ export class Drone extends Entity {
  */
 export class Enemy extends Entity {
   constructor(id, enemyType, position, options = {}) {
+    const defaultShape = {
+      infantry: 'circle',
+      tank: 'square',
+      helicopter: 'triangle',
+      vehicle: 'diamond'
+    }[enemyType] || 'circle'
+    const defaultColor = {
+      infantry: '#FF6B6B',
+      tank: '#FF4500',
+      helicopter: '#FB7185',
+      vehicle: '#F97316'
+    }[enemyType] || '#FF0000'
+    const defaultRenderSize = {
+      infantry: 12,
+      tank: 18,
+      helicopter: 16,
+      vehicle: 14
+    }[enemyType] || 12
+
     super(id, 'enemy', position, {
       allegiance: 'enemy',
-      shape: {
-        'enemy_soldier': 'circle',
-        'enemy_tank': 'square',
-        'enemy_helicopter': 'triangle'
-      }[enemyType] || 'circle',
-      color: {
-        'enemy_soldier': '#FF6B6B',    // Light coral (warm)
-        'enemy_tank': '#FF4500',       // Orange red (warm)
-        'enemy_helicopter': '#FF8C00'  // Dark orange (warm)
-      }[enemyType] || '#FF0000',
-      revealed: options.revealed !== undefined ? options.revealed : false,
-      ...options
+      ...options,
+      shape: options.shape ?? defaultShape,
+      color: options.color ?? defaultColor,
+      renderSize: options.renderSize ?? defaultRenderSize,
+      revealed: options.revealed !== undefined ? options.revealed : false
     })
     this.enemyType = enemyType
   }
@@ -180,23 +207,27 @@ export class Enemy extends Entity {
  */
 export class Structure extends Entity {
   constructor(id, structureType, position, options = {}) {
+    const defaultShape = {
+      'building': 'rectangle',
+      'warehouse': 'rectangle',
+      'mountain': 'square',
+      'bridge': 'rectangle'
+    }[structureType] || 'rectangle'
+    const defaultColor = {
+      'building': '#4A4A4A',
+      'warehouse': '#3A3A3A',
+      'mountain': '#8B7355',
+      'bridge': '#666666'
+    }[structureType] || '#4A4A4A'
+
     super(id, 'structure', position, {
       allegiance: 'neutral',
       blocksLoS: true, // Structures block line of sight by default
-      shape: {
-        'building': 'rectangle',
-        'warehouse': 'rectangle',
-        'mountain': 'square',
-        'bridge': 'rectangle'
-      }[structureType] || 'rectangle',
-      color: {
-        'building': '#4A4A4A',
-        'warehouse': '#3A3A3A',
-        'mountain': '#8B7355',
-        'bridge': '#666666'
-      }[structureType] || '#4A4A4A',
+      ...options,
+      shape: options.shape ?? defaultShape,
+      color: options.color ?? defaultColor,
       size: options.size || 0.8,
-      ...options
+      renderSize: options.renderSize || 18
     })
     this.structureType = structureType
   }
@@ -218,21 +249,27 @@ export class Structure extends Entity {
  */
 export class PointOfInterest extends Entity {
   constructor(id, poiType, position, options = {}) {
+    const defaultShape = {
+      'downed_aircraft': 'triangle',
+      'cache': 'square',
+      'checkpoint': 'circle',
+      'crash_site': 'diamond'
+    }[poiType] || 'circle'
+    const defaultColor = {
+      'downed_aircraft': '#FFD93D',
+      'cache': '#FFB347',
+      'checkpoint': '#87CEEB',
+      'crash_site': '#F59E0B'
+    }[poiType] || '#CCCCCC'
+
     super(id, 'poi', position, {
       allegiance: 'neutral',
       blocksLoS: false,
-      shape: {
-        'downed_aircraft': 'triangle',
-        'cache': 'square',
-        'checkpoint': 'circle'
-      }[poiType] || 'circle',
-      color: {
-        'downed_aircraft': '#FFD93D',
-        'cache': '#FFB347',
-        'checkpoint': '#87CEEB'
-      }[poiType] || '#CCCCCC',
-      revealed: options.revealed !== undefined ? options.revealed : false,
-      ...options
+      ...options,
+      shape: options.shape ?? defaultShape,
+      color: options.color ?? defaultColor,
+      renderSize: options.renderSize || 14,
+      revealed: options.revealed !== undefined ? options.revealed : false
     })
     this.poiType = poiType
   }
@@ -243,6 +280,7 @@ export class PointOfInterest extends Entity {
  */
 export function stateToEntities(state) {
   const entities = []
+  const isFiniteNumber = (value) => Number.isFinite(Number(value))
 
   const clampPosition = (position) => {
     if (!Array.isArray(position) || position.length !== 2) return [500, 500]
@@ -258,6 +296,33 @@ export function stateToEntities(state) {
     return [500, 500]
   }
 
+  const resolveRenderOptions = (entity) => {
+    const render = entity?.render || {}
+    const options = {}
+
+    if (typeof render.shape === 'string' && render.shape.length > 0) {
+      options.shape = render.shape
+    }
+    if (typeof render.color === 'string' && render.color.length > 0) {
+      options.color = render.color
+    }
+
+    const renderSize = isFiniteNumber(render.radius)
+      ? Number(render.radius)
+      : isFiniteNumber(render.size)
+        ? Number(render.size)
+        : null
+    if (renderSize !== null) {
+      options.renderSize = renderSize
+    }
+
+    if (isFiniteNumber(render.opacity)) {
+      options.opacity = Number(render.opacity)
+    }
+
+    return options
+  }
+
   // Add drones from Phase 4 format
   if (state.nodes && state.nodes.length > 0) {
     for (const node of state.nodes) {
@@ -267,24 +332,32 @@ export function stateToEntities(state) {
                         node.role?.includes('soldier') ? 'soldier' :
                         node.id?.includes('recon') ? 'recon' :
                         node.id?.includes('attack') ? 'attack' : 'soldier')
+      const render = resolveRenderOptions(node)
 
       entities.push(new Drone(node.id, droneType, pos, {
+        label: node.label,
         status: node.status || 'active',
         behavior: node.behavior || state.drone_behaviors?.[node.id]?.current || 'lurk',
-        transmissionRange: node.transmission_range
+        transmissionRange: node.transmission_range,
+        detectionRadius: Number(node.detection_radius) || 0,
+        ...render
       }))
     }
   } else if (state.drones) {
     for (const drone of state.drones) {
       const pos = resolvePosition(drone)
+      const render = resolveRenderOptions(drone)
       entities.push(new Drone(
         drone.id,
         drone.type,
         pos,
         {
+          label: drone.label,
           status: drone.status,
           behavior: drone.behavior,
-          transmissionRange: drone.transmission_range
+          transmissionRange: drone.transmission_range,
+          detectionRadius: Number(drone.detection_radius) || 0,
+          ...render
         }
       ))
     }
@@ -294,11 +367,17 @@ export function stateToEntities(state) {
   if (state.enemies) {
     for (const enemy of state.enemies) {
       const pos = resolvePosition(enemy)
+      const render = resolveRenderOptions(enemy)
       entities.push(new Enemy(
         enemy.id,
-        enemy.subtype,
+        enemy.subtype || enemy.type,
         pos,
-        { status: enemy.status, revealed: false }
+        {
+          label: enemy.label,
+          status: enemy.status,
+          revealed: enemy.revealed,
+          ...render
+        }
       ))
     }
   }
@@ -307,11 +386,36 @@ export function stateToEntities(state) {
   if (state.structures) {
     for (const struct of state.structures) {
       const pos = resolvePosition(struct)
+      const render = resolveRenderOptions(struct)
       entities.push(new Structure(
         struct.id,
-        struct.subtype,
+        struct.subtype || struct.type,
         pos,
-        { status: struct.status }
+        {
+          label: struct.label,
+          status: struct.status,
+          size: isFiniteNumber(struct.blocking_size) ? Number(struct.blocking_size) : undefined,
+          ...render
+        }
+      ))
+    }
+  }
+
+  // Add special entities / points of interest
+  if (state.special_entities) {
+    for (const entity of state.special_entities) {
+      const pos = resolvePosition(entity)
+      const render = resolveRenderOptions(entity)
+      entities.push(new PointOfInterest(
+        entity.id,
+        entity.subtype || entity.type,
+        pos,
+        {
+          label: entity.label,
+          status: entity.status,
+          revealed: entity.revealed,
+          ...render
+        }
       ))
     }
   }

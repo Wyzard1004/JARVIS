@@ -9,18 +9,19 @@
 import React from 'react'
 
 const DRONE_TYPES = [
-  { type: 'soldier', label: 'Soldier Operator', color: '#7B68EE', symbol: 'square', range: '190u / 1.5 sectors' },
-  { type: 'compute', label: 'Compute Drone', color: '#4169E1', symbol: 'diamond', range: '420u / 3.4 sectors' },
-  { type: 'recon', label: 'Recon Drone', color: '#87CEEB', symbol: 'triangle', range: '140u / 1.1 sectors' },
-  { type: 'attack', label: 'Attack Drone', color: '#00BFFF', symbol: 'star', range: '140u / 1.1 sectors' }
+  { type: 'soldier', label: 'Soldier Operator', color: '#8B5CF6', symbol: 'square', range: '190u / 1.5 sectors' },
+  { type: 'compute', label: 'Compute Drone', color: '#1E3A8A', symbol: 'diamond', range: '420u / 3.4 sectors' },
+  { type: 'recon', label: 'Recon Drone', color: '#7DD3FC', symbol: 'triangle', range: '170u / 1.4 sectors' },
+  { type: 'attack', label: 'Attack Drone', color: '#7DD3FC', symbol: 'star', range: '160u / 1.3 sectors' }
 ]
 
 const ENTITY_TYPES = [
   { name: 'Enemy Tank', color: '#FF4500', shape: 'square' },
   { name: 'Enemy Infantry', color: '#FF6B6B', shape: 'circle' },
+  { name: 'Enemy Vehicle', color: '#F97316', shape: 'diamond' },
   { name: 'Building/Structure', color: '#8B7355', shape: 'square' },
   { name: 'Downed Aircraft', color: '#FFD93D', shape: 'triangle' },
-  { name: 'Bridge', color: '#666666', shape: 'circle' }
+  { name: 'Supply Cache', color: '#F59E0B', shape: 'square' }
 ]
 
 function GridLegend({ activeDrones = [] }) {
@@ -103,6 +104,14 @@ function GridLegend({ activeDrones = [] }) {
                   className="w-4 h-4 border border-gray-400"
                   style={{ backgroundColor: entity.color }}
                 />
+              ) : entity.shape === 'diamond' ? (
+                <div
+                  className="w-4 h-4 border border-gray-400"
+                  style={{
+                    backgroundColor: entity.color,
+                    transform: 'rotate(45deg)'
+                  }}
+                />
               ) : entity.shape === 'triangle' ? (
                 <div
                   className="w-0 h-0 border-l-2 border-r-2 border-b-4 border-l-transparent border-r-transparent"
@@ -142,6 +151,10 @@ function GridLegend({ activeDrones = [] }) {
             <svg className="w-6 h-0.5" style={{ backgroundColor: '#FFD700' }} />
             <span className="text-gray-300">Spanning tree edge (primary link)</span>
           </div>
+          <div className="flex items-center gap-2">
+            <span className="px-2 py-0.5 border border-sky-300 rounded text-sky-300">◎</span>
+            <span className="text-gray-300">Recon sensor radius reveals enemies and special entities</span>
+          </div>
         </div>
       </div>
 
@@ -155,9 +168,7 @@ function GridLegend({ activeDrones = [] }) {
               {activeDrones.map((drone) => (
                 <div key={drone.id} className="font-mono text-gray-300">
                   <span className="font-bold">{drone.id}</span>
-                  {drone.health !== undefined && (
-                    <span className="text-xs ml-2">Health: {(drone.health * 100).toFixed(0)}%</span>
-                  )}
+                  <span className="text-xs ml-2 capitalize">{drone.type || 'drone'}</span>
                 </div>
               ))}
             </div>

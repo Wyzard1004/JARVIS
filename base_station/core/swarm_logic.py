@@ -82,6 +82,7 @@ class SwarmCoordinator:
         self._base_nodes = deepcopy(self._config.get("drones", []))
         self._enemies = self._normalize_entities(self._config.get("enemies", []))
         self._structures = self._normalize_entities(self._config.get("structures", []))
+        self._special_entities = self._normalize_entities(self._config.get("special_entities", []))
         self._node_lookup = {node["id"]: deepcopy(node) for node in self._base_nodes}
 
         self._drone_positions: Dict[str, Tuple[float, float]] = {}
@@ -110,6 +111,7 @@ class SwarmCoordinator:
             "drones": [],
             "enemies": [],
             "structures": [],
+            "special_entities": [],
             "initial_events": [],
         }
 
@@ -713,12 +715,13 @@ class SwarmCoordinator:
             "timestamp": datetime.now().isoformat(),
             "enemies": deepcopy(self._enemies),
             "structures": deepcopy(self._structures),
+            "special_entities": deepcopy(self._special_entities),
             "events": self._recent_events(),
         }
         self._last_state = deepcopy(result)
         return result
 
-    def calculate_gossip_path(self, swarm_intent: Dict) -> Dict:
+    def _calculate_gossip_path_modern(self, swarm_intent: Dict) -> Dict:
         origin = self._resolve_origin_node(swarm_intent.get("origin") or swarm_intent.get("operator_node"))
         target_location = swarm_intent.get("target_location")
         target_position = self.space.location_to_point(target_location)
@@ -735,7 +738,7 @@ class SwarmCoordinator:
             control_node=origin,
         )
 
-    def calculate_raft_path(self, swarm_intent: Dict) -> Dict:
+    def _calculate_raft_path_modern(self, swarm_intent: Dict) -> Dict:
         origin = self._resolve_origin_node(swarm_intent.get("origin") or swarm_intent.get("operator_node"))
         target_location = swarm_intent.get("target_location")
         target_position = self.space.location_to_point(target_location)
@@ -802,45 +805,39 @@ class SwarmCoordinator:
 
     def _compat_target_pixel(self, target_location: Optional[str]) -> Tuple[float, float]:
         if not target_location:
-            return (0.0, 0.0)
+            return (self.space.SPACE_SIZE / 2.0, self.space.SPACE_SIZE / 2.0)
+        return self.space.location_to_point(target_location)
 
-        normalized = target_location.strip().lower()
-        quick_map = {
-            "grid alpha": (6, 6),
-            "grid bravo": (10, 10),
-            "grid charlie": (14, 14),
-        }
-        grid_pos = quick_map.get(normalized)
-        if grid_pos is None:
-            return (0.0, 0.0)
-
-        x, y = self.grid_system.grid_to_pixel(grid_pos[0], grid_pos[1])
-        return (float(x), float(y))
-
-    def _compat_nodes(self) -> List[Dict]:
+    def _compat_nodes(self, node_ids: Optional[List[str]] = None) -> List[Dict]:
+        selected_ids = node_ids or [node["id"] for node in self._base_nodes]
         nodes = []
-        for node in self._base_nodes:
-            node_id = node["id"]
-            grid_position = self._drone_positions.get(node_id, (13, 13))
-            x, y = self.grid_system.grid_to_pixel(grid_position[0], grid_position[1])
+        for node_id in selected_ids:
+            node = deepcopy(self._node_lookup.get(node_id, {"id": node_id}))
+            position = self._drone_positions.get(node_id, (self.space.SPACE_SIZE / 2.0, self.space.SPACE_SIZE / 2.0))
+            display_row, display_col = self.space.display_sector_indices(position)
             nodes.append(
                 {
-                    **deepcopy(node),
+                    **node,
                     "status": node.get("status", "active"),
-                    "x": float(x),
-                    "y": float(y),
-                    "grid_position": grid_position,
-                    "transmission_range": self._transmission_ranges.get(node_id, 3),
+                    "position": [float(position[0]), float(position[1])],
+                    "x": float(position[0]),
+                    "y": float(position[1]),
+                    "grid_position": [display_row, display_col],
+                    "display_sector": self.space.display_sector_label(position),
+                    "transmission_range": self._transmission_ranges.get(node_id, 140.0),
                 }
             )
         return nodes
 
-    def _compat_edges(self, origin: str, initial_hops: List[str]) -> List[Dict]:
+    def _compat_edges(self, origin: str, initial_hops: List[str], allowed_nodes: Optional[List[str]] = None) -> List[Dict]:
         hop_set = set(initial_hops)
+        allowed = set(allowed_nodes or [])
         edges = []
         for edge in self.calculate_transmission_graph():
             source = edge["source"]
             target = edge["target"]
+            if allowed and (source not in allowed or target not in allowed):
+                continue
             status = "ready"
             if (source == origin and target in hop_set) or (target == origin and source in hop_set):
                 status = "propagated"
@@ -891,7 +888,7 @@ class SwarmCoordinator:
         sender_id = self._compat_sender_id(command)
         priority = self._compat_priority(command)
         message_content = str(command.get("transcribed_text") or command.get("action_code") or "COMMAND")
-        target_location = command.get("target_location")
+        target_location = command.get("target_location") or command.get("target")
 
         broadcast = self.broadcast_message(
             sender_id=sender_id,
@@ -903,8 +900,16 @@ class SwarmCoordinator:
         propagation_order = self._compat_propagation_order(sender_id, initial_hops, message_id)
         target_x, target_y = self._compat_target_pixel(target_location)
 
-        nodes = self._compat_nodes()
-        edges = self._compat_edges(sender_id, initial_hops)
+        compat_node_ids = []
+        for node_id in [sender_id, *initial_hops, *self._drone_positions.keys()]:
+            if node_id in compat_node_ids:
+                continue
+            compat_node_ids.append(node_id)
+            if len(compat_node_ids) == 3:
+                break
+
+        nodes = self._compat_nodes(compat_node_ids)
+        edges = self._compat_edges(sender_id, initial_hops, compat_node_ids)
 
         return {
             "status": "propagating",
@@ -929,11 +934,15 @@ class SwarmCoordinator:
         }
 
     def calculate_gossip_path(self, command: Dict) -> Dict:
-        """Backward-compatible entrypoint expected by older API layers."""
+        """Route legacy test/demo payloads to compat mode and new payloads to continuous mode."""
+        if any(key in command for key in ("target_location", "action_code", "consensus_algorithm", "operator_node", "origin")):
+            return self._calculate_gossip_path_modern(command)
         return self._compat_consensus_result(command, algorithm="gossip")
 
     def calculate_raft_path(self, command: Dict) -> Dict:
-        """Backward-compatible entrypoint expected by older API layers."""
+        """Route legacy test/demo payloads to compat mode and new payloads to continuous mode."""
+        if any(key in command for key in ("target_location", "action_code", "consensus_algorithm", "operator_node", "origin")):
+            return self._calculate_raft_path_modern(command)
         return self._compat_consensus_result(command, algorithm="raft")
 
     def get_state(self) -> Dict:
@@ -954,6 +963,7 @@ class SwarmCoordinator:
         state["available_algorithms"] = self.get_supported_algorithms()
         state["enemies"] = deepcopy(self._enemies)
         state["structures"] = deepcopy(self._structures)
+        state["special_entities"] = deepcopy(self._special_entities)
         state["events"] = self._recent_events()
         state.setdefault("status", "idle")
         state.setdefault("algorithm", "gossip")

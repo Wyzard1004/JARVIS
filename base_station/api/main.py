@@ -345,8 +345,7 @@ def _build_lean_ui_event(consensus_result: Dict, transcribed_text: str, parsed_c
             "position": n.get("position"),
             "next_waypoint": n.get("next_waypoint"),
             "transmission_range": n.get("transmission_range"),
-            "health": n.get("health"),
-            "fuel": n.get("fuel"),
+            "detection_radius": n.get("detection_radius"),
             "render": n.get("render"),
         }
         for n in nodes
@@ -389,12 +388,13 @@ def _build_lean_ui_event(consensus_result: Dict, transcribed_text: str, parsed_c
         "propagation_order": lean_prop,
         "total_propagation_ms": consensus_result.get("total_propagation_ms", 0),
         "confirmation_text": confirmation_text,
-        "enemies": sim_data.get("enemies", []),
+        "enemies": consensus_result.get("enemies", []),
         "attack_queue": sim_data.get("attack_queue", []),
         "recon_status": sim_data.get("recon_status", {}),
         "operator_signals": sim_data.get("operator_signals", []),
         "signal_animations": signal_animations,
         "structures": consensus_result.get("structures", []),
+        "special_entities": consensus_result.get("special_entities", []),
         "events": consensus_result.get("events", []),
         "transcribed_text": transcribed_text,
         "parsed_command": parsed_command,
@@ -524,6 +524,7 @@ async def websocket_swarm_endpoint(websocket: WebSocket):
             "active_gossip_messages": initial_state.get("active_gossip_messages", []),
             "enemies": initial_state.get("enemies", []),
             "structures": initial_state.get("structures", []),
+            "special_entities": initial_state.get("special_entities", []),
             "events": initial_state.get("events", []),
             "timestamp": datetime.now().isoformat()
         }
@@ -549,6 +550,7 @@ async def websocket_swarm_endpoint(websocket: WebSocket):
                         "active_gossip_messages": current_state.get("active_gossip_messages", []),
                         "enemies": current_state.get("enemies", []),
                         "structures": current_state.get("structures", []),
+                        "special_entities": current_state.get("special_entities", []),
                         "events": current_state.get("events", []),
                         "timestamp": datetime.now().isoformat()
                     }

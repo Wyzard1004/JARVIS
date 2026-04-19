@@ -1,81 +1,72 @@
 /**
- * SwarmCanvas Component (Urban Combat Edition - Phase 4)
- * 
- * Renders an 8x8 NATO grid for urban combat scenarios with:
- * - 8x8 grid (Alpha-Hotel, 1-8) with 125 coordinate units per cell
- * - Dynamic drone circles (7px radius)
- * - Symbolic shapes within circles (drone type indicators)
- * - Dynamic transmission lines with proper line-of-sight blocking
- * - Hidden enemies/destroyed aircraft until revealed
- * - Urban terrain features (buildings blocking line of sight)
- * - Gossip protocol visualization in urban environment
- * 
- * Uses HTML5 Canvas for high-performance rendering with dark theme.
- * Entity system provides unified state management for all game objects.
+ * SwarmCanvas renders the 1000x1000 continuous world onto an 8x8 tactical grid.
+ * The UI grid is a projection only; all entity positions and radii remain continuous.
  */
 
 import React, { useEffect, useRef, useState } from 'react'
-import { stateToEntities, getLoSBlockingEntities } from '../lib/entities'
+import { stateToEntities } from '../lib/entities'
 
-// 8x8 URBAN COMBAT GRID (Alpha-Halo, 1-8) - 125 units per cell
-const CELL_SIZE = 75 // 75px per grid cell (600px / 8 cells)
-const GRID_SIZE = 8 // 8x8 (A-H, 1-8) - clean 125 coordinate units per cell
-const CANVAS_WIDTH = GRID_SIZE * CELL_SIZE // 600px
-const CANVAS_HEIGHT = GRID_SIZE * CELL_SIZE // 600px
-
+const CELL_SIZE = 75
+const GRID_SIZE = 8
+const CANVAS_WIDTH = GRID_SIZE * CELL_SIZE
+const CANVAS_HEIGHT = GRID_SIZE * CELL_SIZE
+const WORLD_SIZE = 1000
+const PIXEL_SCALE = CANVAS_WIDTH / WORLD_SIZE
 const NATO_PHONETIC_SHORT = ['Alpha', 'Bravo', 'Charlie', 'Delta', 'Echo', 'Foxtrot', 'Golf', 'Hotel']
-
-// Drone type symbols (shapes inside circles)
-const DRONE_SYMBOLS = {
-  soldier: 'square',      // operator in command center
-  compute: 'diamond',     // computational processing
-  recon: 'triangle',      // scout/reconnaissance 
-  attack: 'star',         // offensive capability
-}
-
-// Entity colors (hidden until revealed)
-const ENTITY_COLORS = {
-  enemy_soldier: '#FF6B6B',    // Red circle
-  enemy_tank: '#8B0000',       // Dark red square
-  downed_aircraft: '#FFD93D',  // Yellow triangle (hidden)
-  building: '#4A4A4A',         // Dark grey (terrain)
-  warehouse: '#3A3A3A',        // Darker grey
-}
 
 function SwarmCanvas({ state = {}, selectedDrone = null, onDroneClick = () => {} }) {
   const canvasRef = useRef(null)
-  const [hoveredDrone, setHoveredDrone] = useState(null)
-  const [mousePos, setMousePos] = useState({ x: 0, y: 0 })
-  const [revealedEnemies, setRevealedEnemies] = useState(new Set())
   const animationFrameRef = useRef(null)
+  const [hoveredDrone, setHoveredDrone] = useState(null)
+  const [revealedEnemies, setRevealedEnemies] = useState(new Set())
+  const [revealedSpecialEntities, setRevealedSpecialEntities] = useState(new Set())
 
-  // Convert state to unified entity system (1000×1000 coordinates)
   const entities = stateToEntities(state)
-  
-  // Extract entities by type
-  const drones = entities.filter(e => e.type === 'drone')
-  const droneMap = new Map(drones.map(d => [d.id, d]))
-  
-  // Transmission graph from Phase 4 state
+  const drones = entities.filter(entity => entity.type === 'drone')
+  const enemies = entities.filter(entity => entity.type === 'enemy')
+  const structures = entities.filter(entity => entity.type === 'structure')
+  const specialEntities = entities.filter(entity => entity.type === 'poi')
+  const reconDrones = drones.filter(drone => drone.droneType === 'recon' && drone.status !== 'destroyed' && drone.detectionRadius > 0)
+  const droneMap = new Map(drones.map(drone => [drone.id, drone]))
   const transmissionGraph = (state.edges || []).map(edge => ({
     source: edge.source,
     target: edge.target,
     quality: edge.quality || 0.5,
-    in_spanning_tree: edge.in_spanning_tree || false
+    inSpanningTree: edge.in_spanning_tree || false
   }))
-  
-  // Blocking entities for line of sight
-  const blockingEntities = entities.filter(e => e.blocksLoS && e.status !== 'destroyed')
+  const blockingEntities = entities.filter(entity => entity.blocksLoS && entity.status !== 'destroyed')
 
-  // Convert 1000×1000 coordinates to canvas pixels (600×600)
-  const coordsToPixel = (x, y) => {
-    // Scale: 600 / 1000 = 0.6
-    return [x * 0.6, y * 0.6]
+  const coordsToPixel = (x, y) => [x * PIXEL_SCALE, y * PIXEL_SCALE]
+  const pixelToWorld = (pixel) => pixel / PIXEL_SCALE
+  const getHitRadius = (entity, minimumWorldRadius = 18) => Math.max(minimumWorldRadius, pixelToWorld((entity.renderSize || 12) * 0.9))
+
+  const mergeDetectedIds = (setter, ids) => {
+    if (ids.length === 0) return
+    setter((previous) => {
+      let changed = false
+      const next = new Set(previous)
+      for (const id of ids) {
+        if (!next.has(id)) {
+          next.add(id)
+          changed = true
+        }
+      }
+      return changed ? next : previous
+    })
   }
 
-  // Check if line of sight is blocked by terrain and structures
-  const isLineOfSightBlocked = (x1, y1, x2, y2, blockingEntities) => {
-    // Check each blocking entity (buildings, mountains, etc.)
+  useEffect(() => {
+    const detectTargets = (targets) => (
+      targets
+        .filter((target) => target.revealed || reconDrones.some((drone) => drone.distanceTo(target) <= drone.detectionRadius))
+        .map((target) => target.id)
+    )
+
+    mergeDetectedIds(setRevealedEnemies, detectTargets(enemies))
+    mergeDetectedIds(setRevealedSpecialEntities, detectTargets(specialEntities))
+  }, [enemies, reconDrones, specialEntities])
+
+  const isLineOfSightBlocked = (x1, y1, x2, y2) => {
     for (const entity of blockingEntities) {
       if (entity.blocksLineOfSight(x1, y1, x2, y2)) {
         return true
@@ -84,20 +75,112 @@ function SwarmCanvas({ state = {}, selectedDrone = null, onDroneClick = () => {}
     return false
   }
 
-  // Render grid background with dark theme
+  const drawStarPath = (ctx, cx, cy, spikes, outerRadius, innerRadius) => {
+    let rotation = Math.PI / 2 * 3
+    const step = Math.PI / spikes
+
+    ctx.beginPath()
+    ctx.moveTo(cx, cy - outerRadius)
+    for (let i = 0; i < spikes; i++) {
+      ctx.lineTo(cx + Math.cos(rotation) * outerRadius, cy + Math.sin(rotation) * outerRadius)
+      rotation += step
+      ctx.lineTo(cx + Math.cos(rotation) * innerRadius, cy + Math.sin(rotation) * innerRadius)
+      rotation += step
+    }
+    ctx.closePath()
+  }
+
+  const drawEntityShape = (ctx, x, y, shape, size, options = {}) => {
+    const {
+      fillStyle,
+      strokeStyle = null,
+      lineWidth = 1,
+      opacity = 1
+    } = options
+    const normalizedShape = shape || 'circle'
+    const half = size / 2
+
+    ctx.save()
+    ctx.globalAlpha = opacity
+
+    if (normalizedShape === 'square') {
+      if (fillStyle) {
+        ctx.fillStyle = fillStyle
+        ctx.fillRect(x - half, y - half, size, size)
+      }
+      if (strokeStyle) {
+        ctx.strokeStyle = strokeStyle
+        ctx.lineWidth = lineWidth
+        ctx.strokeRect(x - half, y - half, size, size)
+      }
+      ctx.restore()
+      return
+    }
+
+    if (normalizedShape === 'rectangle') {
+      const width = size * 1.45
+      const height = size * 0.9
+      if (fillStyle) {
+        ctx.fillStyle = fillStyle
+        ctx.fillRect(x - width / 2, y - height / 2, width, height)
+      }
+      if (strokeStyle) {
+        ctx.strokeStyle = strokeStyle
+        ctx.lineWidth = lineWidth
+        ctx.strokeRect(x - width / 2, y - height / 2, width, height)
+      }
+      ctx.restore()
+      return
+    }
+
+    if (normalizedShape === 'diamond') {
+      ctx.beginPath()
+      ctx.moveTo(x, y - half)
+      ctx.lineTo(x + half, y)
+      ctx.lineTo(x, y + half)
+      ctx.lineTo(x - half, y)
+      ctx.closePath()
+    } else if (normalizedShape === 'triangle') {
+      ctx.beginPath()
+      ctx.moveTo(x, y - half)
+      ctx.lineTo(x + half, y + half)
+      ctx.lineTo(x - half, y + half)
+      ctx.closePath()
+    } else if (normalizedShape === 'star') {
+      drawStarPath(ctx, x, y, 5, half, half * 0.45)
+    } else {
+      ctx.beginPath()
+      ctx.arc(x, y, half, 0, Math.PI * 2)
+      ctx.closePath()
+    }
+
+    if (fillStyle) {
+      ctx.fillStyle = fillStyle
+      ctx.fill()
+    }
+    if (strokeStyle) {
+      ctx.strokeStyle = strokeStyle
+      ctx.lineWidth = lineWidth
+      ctx.stroke()
+    }
+    ctx.restore()
+  }
+
   const drawGrid = (ctx) => {
     ctx.fillStyle = '#1A1A1A'
     ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT)
     ctx.strokeStyle = '#333333'
     ctx.lineWidth = 1
-    for (let col = 0; col <= GRID_SIZE; col++) {
+
+    for (let col = 0; col <= GRID_SIZE; col += 1) {
       const x = col * CELL_SIZE
       ctx.beginPath()
       ctx.moveTo(x, 0)
       ctx.lineTo(x, CANVAS_HEIGHT)
       ctx.stroke()
     }
-    for (let row = 0; row <= GRID_SIZE; row++) {
+
+    for (let row = 0; row <= GRID_SIZE; row += 1) {
       const y = row * CELL_SIZE
       ctx.beginPath()
       ctx.moveTo(0, y)
@@ -106,13 +189,13 @@ function SwarmCanvas({ state = {}, selectedDrone = null, onDroneClick = () => {}
     }
   }
 
-  // Draw row/column labels
   const drawLabels = (ctx) => {
     ctx.font = 'bold 12px monospace'
     ctx.fillStyle = '#666666'
     ctx.textAlign = 'center'
     ctx.textBaseline = 'middle'
-    for (let row = 0; row < GRID_SIZE; row++) {
+
+    for (let row = 0; row < GRID_SIZE; row += 1) {
       const y = row * CELL_SIZE + CELL_SIZE / 2
       const label = NATO_PHONETIC_SHORT[row].substring(0, 3)
       ctx.save()
@@ -121,270 +204,200 @@ function SwarmCanvas({ state = {}, selectedDrone = null, onDroneClick = () => {}
       ctx.fillText(label, 0, 0)
       ctx.restore()
     }
-    for (let col = 0; col < GRID_SIZE; col++) {
+
+    for (let col = 0; col < GRID_SIZE; col += 1) {
       const x = col * CELL_SIZE + CELL_SIZE / 2
       ctx.fillText(col + 1, x, -8)
     }
   }
 
-  // Draw terrain features (buildings, etc.)
   const drawTerrain = (ctx) => {
-    const structures = entities.filter(e => e.type === 'structure')
-    for (const struct of structures) {
-      const [x, y] = coordsToPixel(struct.position[0], struct.position[1])
-      const color = struct.color
-      const size = struct.size * 40 // Scale by entity size
-      ctx.fillStyle = color
-      ctx.globalAlpha = 0.6
-      
-      if (struct.shape === 'triangle') {
-        ctx.beginPath()
-        ctx.moveTo(x, y - size / 2)
-        ctx.lineTo(x + size / 2, y + size / 2)
-        ctx.lineTo(x - size / 2, y + size / 2)
-        ctx.closePath()
-        ctx.fill()
-      } else if (struct.shape === 'rectangle') {
-        // Rectangles are wider
-        ctx.fillRect(x - size * 0.75, y - size / 2, size * 1.5, size)
-        ctx.strokeStyle = '#555555'
-        ctx.lineWidth = 1
-        ctx.strokeRect(x - size * 0.75, y - size / 2, size * 1.5, size)
-      } else {
-        // Default square
-        ctx.fillRect(x - size / 2, y - size / 2, size, size)
-        ctx.strokeStyle = '#555555'
-        ctx.lineWidth = 1
-        ctx.strokeRect(x - size / 2, y - size / 2, size, size)
-      }
-      ctx.globalAlpha = 1.0
+    for (const structure of structures) {
+      const [x, y] = coordsToPixel(structure.position[0], structure.position[1])
+      drawEntityShape(ctx, x, y, structure.shape, structure.renderSize || 18, {
+        fillStyle: structure.color,
+        strokeStyle: '#555555',
+        lineWidth: 1,
+        opacity: structure.opacity ?? 0.75
+      })
     }
   }
 
-  // Draw transmission lines
   const drawTransmissionLines = (ctx) => {
     for (const edge of transmissionGraph) {
       const sourceDrone = droneMap.get(edge.source)
       const targetDrone = droneMap.get(edge.target)
       if (!sourceDrone || !targetDrone) continue
-      
-      // Use raw coordinates for LoS checking
+
       const x1 = sourceDrone.position[0]
       const y1 = sourceDrone.position[1]
       const x2 = targetDrone.position[0]
       const y2 = targetDrone.position[1]
-      
-      // Check line of sight with blocking entities
-      if (isLineOfSightBlocked(x1, y1, x2, y2, blockingEntities)) continue
-      
-      // Convert to pixel coordinates for rendering
+      if (isLineOfSightBlocked(x1, y1, x2, y2)) continue
+
       const [px1, py1] = coordsToPixel(x1, y1)
       const [px2, py2] = coordsToPixel(x2, y2)
-      
-      const isSpanningTreeEdge = edge.in_spanning_tree
       const quality = edge.quality || 0.5
-      ctx.strokeStyle = isSpanningTreeEdge ? '#FFD700' : '#4A4A4A'
-      ctx.lineWidth = isSpanningTreeEdge ? 2 : 1
+
+      ctx.save()
+      ctx.strokeStyle = edge.inSpanningTree ? '#FFD700' : '#4A4A4A'
+      ctx.lineWidth = edge.inSpanningTree ? 2 : 1
       ctx.globalAlpha = quality * 0.6
       ctx.beginPath()
       ctx.moveTo(px1, py1)
       ctx.lineTo(px2, py2)
       ctx.stroke()
-      ctx.globalAlpha = 1.0
+      ctx.restore()
     }
   }
 
-  // Draw drone symbols
-  const drawDroneSymbol = (ctx, x, y, type, size) => {
-    const symbol = DRONE_SYMBOLS[type] || 'circle'
-    switch (symbol) {
-      case 'square':
-        ctx.fillRect(x - size / 2, y - size / 2, size, size)
-        break
-      case 'diamond':
-        ctx.beginPath()
-        ctx.moveTo(x, y - size / 2)
-        ctx.lineTo(x + size / 2, y)
-        ctx.lineTo(x, y + size / 2)
-        ctx.lineTo(x - size / 2, y)
-        ctx.closePath()
-        ctx.fill()
-        break
-      case 'triangle':
-        ctx.beginPath()
-        ctx.moveTo(x, y - size / 2)
-        ctx.lineTo(x + size / 2, y + size / 2)
-        ctx.lineTo(x - size / 2, y + size / 2)
-        ctx.closePath()
-        ctx.fill()
-        break
-      case 'star':
-        drawStar(ctx, x, y, 5, size / 2, size / 4)
-        break
-      default:
-        ctx.beginPath()
-        ctx.arc(x, y, size / 2, 0, Math.PI * 2)
-        ctx.fill()
+  const drawReconDetectionRings = (ctx) => {
+    for (const drone of reconDrones) {
+      const [x, y] = coordsToPixel(drone.position[0], drone.position[1])
+      const detectionRadius = drone.detectionRadius * PIXEL_SCALE
+
+      ctx.save()
+      ctx.setLineDash([6, 6])
+      ctx.strokeStyle = '#7DD3FC'
+      ctx.fillStyle = '#7DD3FC'
+      ctx.lineWidth = 1.5
+      ctx.globalAlpha = 0.12
+      ctx.beginPath()
+      ctx.arc(x, y, detectionRadius, 0, Math.PI * 2)
+      ctx.fill()
+      ctx.globalAlpha = 0.45
+      ctx.stroke()
+      ctx.restore()
     }
   }
 
-  // Draw star shape
-  const drawStar = (ctx, cx, cy, spikes, outerRadius, innerRadius) => {
-    let rot = Math.PI / 2 * 3
-    let step = Math.PI / spikes
-    ctx.beginPath()
-    ctx.moveTo(cx, cy - outerRadius)
-    for (let i = 0; i < spikes; i++) {
-      ctx.lineTo(cx + Math.cos(rot) * outerRadius, cy + Math.sin(rot) * outerRadius)
-      rot += step
-      ctx.lineTo(cx + Math.cos(rot) * innerRadius, cy + Math.sin(rot) * innerRadius)
-      rot += step
-    }
-    ctx.lineTo(cx, cy - outerRadius)
-    ctx.closePath()
-    ctx.fill()
-  }
-
-  // Draw drones
   const drawDrones = (ctx) => {
     for (const drone of drones) {
       const [x, y] = coordsToPixel(drone.position[0], drone.position[1])
-      const radius = 7
-      const color = drone.color || '#999999'
-      ctx.fillStyle = color
-      ctx.globalAlpha = 0.9
-      ctx.beginPath()
-      ctx.arc(x, y, radius, 0, Math.PI * 2)
-      ctx.fill()
-      ctx.fillStyle = color
-      ctx.globalAlpha = 1.0
-      drawDroneSymbol(ctx, x, y, drone.droneType, radius * 1.2)
+      const size = drone.renderSize || 14
+
+      drawEntityShape(ctx, x, y, drone.shape, size, {
+        fillStyle: drone.color || '#999999',
+        opacity: drone.opacity ?? 0.95
+      })
+
       if (drone.id === selectedDrone) {
-        ctx.strokeStyle = '#FFFF00'
+        ctx.save()
+        ctx.strokeStyle = '#FDE047'
         ctx.lineWidth = 2
-        ctx.globalAlpha = 1.0
         ctx.beginPath()
-        ctx.arc(x, y, radius + 5, 0, Math.PI * 2)
+        ctx.arc(x, y, size / 2 + 7, 0, Math.PI * 2)
         ctx.stroke()
+        ctx.restore()
       }
+
       if (drone.id === hoveredDrone) {
+        ctx.save()
         ctx.strokeStyle = '#FFFFFF'
         ctx.lineWidth = 1.5
-        ctx.globalAlpha = 0.7
+        ctx.globalAlpha = 0.75
         ctx.beginPath()
-        ctx.arc(x, y, radius + 3, 0, Math.PI * 2)
+        ctx.arc(x, y, size / 2 + 4, 0, Math.PI * 2)
         ctx.stroke()
+        ctx.restore()
       }
-      ctx.globalAlpha = 1.0
     }
   }
 
-  // Draw enemies
   const drawEnemies = (ctx) => {
-    const enemies = entities.filter(e => e.type === 'enemy')
     for (const enemy of enemies) {
       if (enemy.status === 'destroyed') continue
-      if (!revealedEnemies.has(enemy.id)) continue
-      
+      if (!enemy.revealed && !revealedEnemies.has(enemy.id)) continue
+
       const [x, y] = coordsToPixel(enemy.position[0], enemy.position[1])
-      const color = enemy.color
-      const size = 5 * enemy.size
-      ctx.fillStyle = color
-      ctx.globalAlpha = 0.95
-      
-      if (enemy.shape === 'square') {
-        ctx.fillRect(x - size / 2, y - size / 2, size, size)
-      } else {
-        ctx.beginPath()
-        ctx.arc(x, y, size / 2, 0, Math.PI * 2)
-        ctx.fill()
-      }
-      ctx.globalAlpha = 1.0
+      drawEntityShape(ctx, x, y, enemy.shape, enemy.renderSize || 12, {
+        fillStyle: enemy.color,
+        opacity: enemy.opacity ?? 0.95
+      })
     }
   }
 
-  // Main render
+  const drawSpecialEntities = (ctx) => {
+    for (const entity of specialEntities) {
+      if (entity.status === 'destroyed') continue
+      if (!entity.revealed && !revealedSpecialEntities.has(entity.id)) continue
+
+      const [x, y] = coordsToPixel(entity.position[0], entity.position[1])
+      drawEntityShape(ctx, x, y, entity.shape, entity.renderSize || 14, {
+        fillStyle: entity.color,
+        strokeStyle: '#FDE68A',
+        lineWidth: 1,
+        opacity: entity.opacity ?? 0.95
+      })
+    }
+  }
+
   const render = (ctx) => {
     drawGrid(ctx)
     drawLabels(ctx)
     drawTerrain(ctx)
-    drawTransmissionLines(ctx, blockingEntities)
-    drawDrones(ctx)
+    drawTransmissionLines(ctx)
+    drawReconDetectionRings(ctx)
+    drawSpecialEntities(ctx)
     drawEnemies(ctx)
+    drawDrones(ctx)
   }
 
-  // Animation loop
   useEffect(() => {
     const canvas = canvasRef.current
-    if (!canvas) return
+    if (!canvas) return undefined
     const ctx = canvas.getContext('2d')
-    if (!ctx) return
+    if (!ctx) return undefined
+
     const animate = () => {
       render(ctx)
       animationFrameRef.current = requestAnimationFrame(animate)
     }
+
     animate()
+
     return () => {
       if (animationFrameRef.current) {
         cancelAnimationFrame(animationFrameRef.current)
       }
     }
-  }, [entities, drones, transmissionGraph, hoveredDrone, selectedDrone, revealedEnemies])
+  }, [enemies, hoveredDrone, reconDrones, revealedEnemies, revealedSpecialEntities, selectedDrone, specialEntities, structures, transmissionGraph, drones])
 
-  // Mouse move handler
-  const handleMouseMove = (e) => {
+  const handleMouseMove = (event) => {
     const canvas = canvasRef.current
     if (!canvas) return
+
     const rect = canvas.getBoundingClientRect()
-    const pixelX = e.clientX - rect.left
-    const pixelY = e.clientY - rect.top
-    setMousePos({ x: pixelX, y: pixelY })
-    
-    // Convert pixel coordinates to entity space (1000×1000)
-    const coordX = pixelX / 0.6
-    const coordY = pixelY / 0.6
-    
-    let hoveredId = null
-    for (const drone of drones) {
-      const distance = drone.distanceTo([coordX, coordY])
-      if (distance < 50) { // ~3 grid cells in old terms
-        hoveredId = drone.id
-        break
-      }
-    }
-    setHoveredDrone(hoveredId)
+    const coordX = pixelToWorld(event.clientX - rect.left)
+    const coordY = pixelToWorld(event.clientY - rect.top)
+
+    const hovered = drones.find((drone) => drone.distanceTo([coordX, coordY]) <= getHitRadius(drone))
+    setHoveredDrone(hovered?.id || null)
   }
 
-  // Click handler
-  const handleClick = (e) => {
+  const handleClick = (event) => {
     const canvas = canvasRef.current
     if (!canvas) return
+
     const rect = canvas.getBoundingClientRect()
-    const pixelX = e.clientX - rect.left
-    const pixelY = e.clientY - rect.top
-    
-    // Convert pixel coordinates to entity space (1000×1000)
-    const coordX = pixelX / 0.6
-    const coordY = pixelY / 0.6
-    
-    // Check for drone clicks
-    for (const drone of drones) {
-      const distance = drone.distanceTo([coordX, coordY])
-      if (distance < 50) { // ~3 grid cells in old terms
-        onDroneClick(drone.id)
-        return
-      }
+    const coordX = pixelToWorld(event.clientX - rect.left)
+    const coordY = pixelToWorld(event.clientY - rect.top)
+
+    const clickedDrone = drones.find((drone) => drone.distanceTo([coordX, coordY]) <= getHitRadius(drone))
+    if (clickedDrone) {
+      onDroneClick(clickedDrone.id)
+      return
     }
-    
-    // Check for enemy clicks
-    const enemies = entities.filter(e => e.type === 'enemy')
-    for (const enemy of enemies) {
-      if (revealedEnemies.has(enemy.id)) continue
-      const distance = enemy.distanceTo([coordX, coordY])
-      if (distance < 50) { // ~3 grid cells
-        setRevealedEnemies(new Set([...revealedEnemies, enemy.id]))
-        return
-      }
+
+    const hiddenEnemy = enemies.find((enemy) => !revealedEnemies.has(enemy.id) && enemy.distanceTo([coordX, coordY]) <= getHitRadius(enemy))
+    if (hiddenEnemy) {
+      setRevealedEnemies((current) => new Set([...current, hiddenEnemy.id]))
+      return
+    }
+
+    const hiddenSpecialEntity = specialEntities.find((entity) => !revealedSpecialEntities.has(entity.id) && entity.distanceTo([coordX, coordY]) <= getHitRadius(entity))
+    if (hiddenSpecialEntity) {
+      setRevealedSpecialEntities((current) => new Set([...current, hiddenSpecialEntity.id]))
     }
   }
 
