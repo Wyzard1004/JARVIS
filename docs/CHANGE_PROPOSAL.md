@@ -2,12 +2,14 @@
 
 This file translates the research brief into concrete repo changes.
 
+Project name: JARVIS (Joint Autonomous Recon and Vision Integrated Swarm)
+
 It is split into:
 
 - `Implemented now`: the highest-value changes already applied for the current demo
 - `Good to have later`: features that improve realism further but add more implementation work
 
-The live parser and schema are documented in [COMMAND_SCHEMA.md](</C:/Users/richa/OneDrive - PennO365/JARVIS/JARVIS/docs/COMMAND_SCHEMA.md:1>). The first section below captures the short-list changes that were actually implemented from the research brief, while the second section stays proposal-only.
+The live parser and schema are documented in [COMMAND_SCHEMA.md](COMMAND_SCHEMA.md). The first section below captures the short-list changes that were actually implemented from the research brief, while the second section stays proposal-only.
 
 ## Implemented Now
 
@@ -28,8 +30,8 @@ What changed:
 
 Where:
 
-- [base_station/core/ai_bridge.py](</C:/Users/richa/OneDrive - PennO365/JARVIS/JARVIS/base_station/core/ai_bridge.py:1>)
-- [base_station/api/main.py](</C:/Users/richa/OneDrive - PennO365/JARVIS/JARVIS/base_station/api/main.py:1>)
+- [../base_station/core/ai_bridge.py](../base_station/core/ai_bridge.py)
+- [../base_station/api/main.py](../base_station/api/main.py)
 - command-center UI components that show command state
 
 ### 2. Add callsign-first command parsing

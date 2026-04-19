@@ -1,6 +1,8 @@
 # Command Schema and Examples
 
-This file documents the current parser contract implemented in [base_station/core/ai_bridge.py](</C:/Users/richa/OneDrive - PennO365/JARVIS/JARVIS/base_station/core/ai_bridge.py:1>).
+This file documents the current parser contract implemented in [../base_station/core/ai_bridge.py](../base_station/core/ai_bridge.py).
+
+It reflects the current JARVIS stack: Joint Autonomous Recon and Vision Integrated Swarm.
 
 The schema now supports:
 

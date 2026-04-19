@@ -1,126 +1,105 @@
 # Roadmap
 
-System: Joint Adaptive Relay for Variable Interoperable Swarms
-Phase Structure: [X.Y.Z]
+System: Joint Autonomous Recon and Vision Integrated Swarm  
+Purpose: separate what is already shipped from what is still a deployment target.
 
-X = Separable Technology Track (Assignee)
+## 1. Shipped In The Current Repo
 
-Y = Major Milestone / Component
+### 1.1 Base station and control flow
 
-Z = Minor Execution Task
+- [x] FastAPI base station in [../base_station/api/main.py](../base_station/api/main.py)
+- [x] command normalization through [../base_station/core/ai_bridge.py](../base_station/core/ai_bridge.py)
+- [x] adaptive gossip path and raft-style comparison path in [../base_station/core/swarm_logic.py](../base_station/core/swarm_logic.py)
+- [x] staged execute flow for destructive commands
+- [x] WebSocket state streaming to the frontend
 
-1.0.0 Hardware and Edge Infrastructure (Assignee: Sebastian)
+### 1.2 Command center
 
-Focus: Establishing the offline Base Station and the ESP32 relay path for the physical demo.
+- [x] React command center shell in [../command_center/src/App.jsx](../command_center/src/App.jsx)
+- [x] canvas-based tactical map through [../command_center/src/components/SwarmCanvas.jsx](../command_center/src/components/SwarmCanvas.jsx)
+- [x] scenario loading and map editor controls
+- [x] mission pinning and command history
+- [x] browser push-to-talk path
 
-1.1 Jetson Orin Base Station Setup
+### 1.3 Jetson and relay demo
 
-1.1.1: [ ] Connect Jetson Orin to the local network and establish stable SSH access for the team.
+- [x] Jetson serial listener in [../base_station/headless/serial_ptt_listener.py](../base_station/headless/serial_ptt_listener.py)
+- [x] local `/relay` and `/status` bridge hosted by the listener
+- [x] gateway ESP32 serial-to-ESP-NOW relay path
+- [x] field relay node and leaf node roles
+- [x] ACK / STATUS return path from field nodes to Jetson
 
-1.1.2: [ ] Install Ollama and pull the quantized model used for local command normalization.
+### 1.4 Vision-integrated scaffold
 
-1.1.3: [ ] Install and configure Mosquitto MQTT broker for local communication between the backend and gateway ESP32.
+- [x] compute-drone controller in [../base_station/core/compute_drone_controller.py](../base_station/core/compute_drone_controller.py)
+- [x] compute and image-processing endpoints in [../base_station/api/main.py](../base_station/api/main.py)
+- [x] compute entities present in populated scenarios
 
-1.2 ESP32 Relay Network
+## 2. Highest-Value Next Work
 
-Context: We have a gateway node plus field nodes. They should demonstrate contested-environment message relay and staged propagation.
+### 2.1 Demo hardening
 
-1.2.1: [ ] Program ESP32 Gateway to receive commands from the backend and rebroadcast them over ESP-NOW or equivalent field link.
+- [ ] Surface hardware relay ACK / STATUS more clearly in the frontend
+- [ ] make startup and recovery more robust when the gateway resets on serial open
+- [ ] add a cleaner "load default populated scenario" workflow for demos
+- [ ] tighten the operator story around browser PTT vs Jetson PTT so judges see one primary flow
 
-1.2.2: [ ] Program field nodes to listen for relay packets and show receipt with LED behavior or status reporting.
+### 2.2 Command semantics
 
-1.2.3: [ ] Add slight randomized delay and forwarding behavior so the physical demo visually reinforces multi-hop dissemination instead of simultaneous activation.
+- [ ] move from basic staged execute to fuller task envelopes with versioning, expiry, and cancellation semantics
+- [ ] add clearer operator authority / provenance metadata to the command lifecycle
+- [ ] improve command-state wording so the UI differentiates recon, movement, and destructive tasks everywhere
 
-2.0.0 Consensus and Search Logic (Assignee: Giulia)
+### 2.3 Vision lane maturation
 
-Focus: The swarm coordination core, including propagation, resilience, and benchmark output.
+- [ ] replace or augment the simulated compute-drone logic with a real image-inference path
+- [ ] connect compute outputs back into operator-facing mission state more directly
+- [ ] make the recon-to-compute-to-strike flow a first-class demo rather than a secondary scaffold
 
-2.1 Swarm State and Consensus Runtime
+## 3. Deployment Target
 
-2.1.1: [x] Initialize the operational graph representing relay, operator, recon, and attack nodes.
+These are the things the markdown should describe as intended deployment behavior, not as already-finished hackathon polish.
 
-2.1.2: [x] Implement adaptive gossip propagation with retries, duplicate suppression, relay fanout, and disruption handling.
+### 3.1 Control and trust
 
-2.1.3: [x] Format the output as UI-ready JSON with nodes, edges, active nodes, propagation order, and mission state.
+- [ ] signed command envelopes
+- [ ] anti-replay protection
+- [ ] operator authority levels
+- [ ] better multi-operator conflict handling
 
-2.2 Benchmarking and Prompt Alignment
+### 3.2 Relay behavior
 
-2.2.1: [x] Implement a leader-based TCP/Raft-style baseline for comparison against gossip.
+- [ ] richer task envelopes for field nodes
+- [ ] clearer task lifecycle synchronization
+- [ ] stronger UI correlation between software propagation and hardware propagation
 
-2.2.2: [x] Quantify latency, bandwidth, and fault-tolerance tradeoffs under disrupted network conditions.
+### 3.3 Vision integration
 
-2.2.3: [ ] Add additional benchmark visual outputs or charts for the final pitch deck as needed.
+- [ ] real mission-facing CV inference on edge hardware
+- [ ] tighter integration between detections, threat assessments, and staged tasking
+- [ ] stronger scenario support for recon-driven target workflows
 
-2.3 Next Growth Areas
+## 4. Explicitly De-Prioritized For The Current Story
 
-2.3.1: [ ] Expand the topology with more node roles, scenarios, and search/report behaviors.
+### 4.1 MQTT as the main transport
 
-2.3.2: [ ] Add richer contested-network events such as timed outages, degraded links, and reassignment behavior.
+`mqtt_client.py` remains in the repo, but it is not the primary deployment narrative for the current code.
 
-3.0.0 Command and Intent Bridge (Assignee: Richard)
+The live relay path is:
 
-Focus: Turning operator input into a safe, normalized swarm command object. Voice is optional; the command contract is primary.
+- backend
+- listener `/relay`
+- USB serial
+- gateway ESP32
+- ESP-NOW field nodes
 
-3.1 Structured and Text Command Parsing
+If MQTT comes back later, it should be framed as an alternate transport or integration path, not as the core story of the current implementation.
 
-3.1.1: [x] Build a Python function that can normalize operator language into a safe JSON command shape.
+## 5. Recommended Pitch Framing
 
-3.1.2: [x] Support local Ollama as an optional parser behind a safe fallback path.
+The cleanest current story is:
 
-3.1.3: [x] Implement error handling and fallback behavior so the swarm path does not depend on perfect model output.
-
-3.2 Optional Audio and Confirmation Layer
-
-3.2.1: [x] Add speech-to-text helper support for microphone uploads when audio is used.
-
-3.2.2: [x] Add confirmation text and optional TTS helper functions.
-
-3.2.3: [ ] Keep audio and TTS non-blocking so direct structured commands remain the primary reliable control path.
-
-3.3 Interface Stability
-
-3.3.1: [ ] Lock the normalized command schema shared by direct payloads, AI parsing, and the swarm runtime.
-
-3.3.2: [ ] Keep confidence, location normalization, and safe fallback behavior consistent across all input modes.
-
-4.0.0 Full-Stack Integration and Command UI (Assignee: William)
-
-Focus: Stitching the pipelines together and making the consensus behavior legible in the UI.
-
-4.1 The FastAPI Hub
-
-4.1.1: [x] Scaffold and run a FastAPI application that imports `ai_bridge.py` and `swarm_logic.py`.
-
-4.1.2: [x] Dispatch swarm commands through either adaptive gossip or the TCP/Raft baseline based on request payloads.
-
-4.1.3: [ ] Wire `mqtt_client.py` into the live dispatch path for hardware publishing.
-
-4.1.4: [x] Expose a WebSocket endpoint (`/ws/swarm`) for real-time state updates to the frontend.
-
-4.2 React Command Center
-
-4.2.1: [x] Initialize the Vite + React app and ship a working command center shell.
-
-4.2.2: [x] Render incoming WebSocket data in the swarm graph and status panel.
-
-4.2.3: [ ] Make structured command controls first-class in the UI, with push-to-talk retained only as an optional demo input.
-
-4.2.4: [x] Maintain command history and live connection state for operator visibility.
-
-4.3 Final Polish
-
-4.3.1: [x] Animate propagation and state changes in the graph so the consensus flow is visually obvious.
-
-4.3.2: [ ] Synchronize UI timing with hardware timing once MQTT and ESP32 relay are wired end to end.
-
-5.0.0 Narrative and Demo Readiness
-
-Focus: Keeping the repo story aligned with what is actually implemented.
-
-5.1 Documentation
-
-5.1.1: [x] Reframe the project around swarm coordination and contested-environment consensus.
-
-5.1.2: [x] Move voice from the identity of the project to an optional operator-interface layer in the docs.
-
-5.1.3: [ ] Update pitch materials with the latest benchmark snapshots and topology screenshots before submission.
+1. local-first command and control on Jetson
+2. real-time operator visualization in the browser
+3. physical relay proof through ESP32 gateway and field nodes
+4. integrated compute-vision lane already present in the codebase and ready for hardening after the hackathon

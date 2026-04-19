@@ -1,109 +1,144 @@
 # Overview
 
-Project Name: JARVIS (Joint Adaptive Relay for Variable Interoperable Swarms)
+Project Name: JARVIS (Joint Autonomous Recon and Vision Integrated Swarm)  
 Hackathon: Critical Ops Hackathon (April 2026)
 
-1. Target Problem Statements
+## 1. What The System Is
 
-Primary: Problem 10 (Swarm Coordination Protocol for Contested Environments)
+JARVIS is a local-first swarm command-and-relay stack for disconnected, denied, degraded, intermittent, or limited-bandwidth environments.
 
-"Build a multi-agent simulation in which a team of drones must collaboratively search a defined area and report objects of interest back to a base station while maintaining coordination even when individual agents lose communication intermittently. Implement and compare at least two swarm consensus algorithms. All results should be visualized and benchmarked."
+The repo is not just a UI mockup and it is not just a voice assistant. The working stack today combines:
 
-Secondary: Problem 16 (Edge Inference)
+- operator command intake
+- swarm-state and mission dispatch logic
+- a live React command center
+- a Jetson-hosted serial relay bridge
+- an ESP32 gateway plus field-node relay demo
 
-"Optimize and deploy open-source AI models for real-time edge inference on resource-constrained hardware in disconnected, denied, or intermittent (DDIL) environments."
+The main story the code supports today is:
 
-2. Project Overview and Mission
+> an operator issues a command, the base station normalizes and dispatches it, the UI updates in real time, and the same command can be mirrored into a physical ESP-NOW relay chain.
 
-JARVIS is a contested-environment swarm coordination system designed for DDIL operations.
+## 2. What "Vision Integrated" Means Right Now
 
-The current repo is centered on resilient coordination, not voice as the primary story. Human operators act as nodes in the command network, and commands can enter the system either as direct structured payloads or through an optional language/audio adapter. Once an intent is normalized, the swarm executes coordination logic using a leaderless adaptive gossip protocol or a leader-based TCP/Raft-style baseline for comparison.
+The new name reflects the codebase, but the docs should stay honest.
 
-The hackathon "wow" factor is that the core logic runs locally on an Nvidia Jetson Orin, broadcasts to a React command center in real time, and can be mirrored to ESP32 hardware for a physical propagation demo. That directly serves Problem 10's simulation, visualization, and benchmark requirements while still leaving room for Problem 16's edge inference story.
+The repo already includes:
 
-3. System Architecture and Tech Stack
+- compute-drone entities in scenarios
+- compute-drone API endpoints in [../base_station/api/main.py](../base_station/api/main.py)
+- simulated target detection and strike-decision logic in [../base_station/core/compute_drone_controller.py](../base_station/core/compute_drone_controller.py)
 
-A. Hardware Layer
+What is not yet fully deployed end to end is a production computer-vision pipeline on the live hardware relay demo. In this repo, the vision lane is a meaningful implemented scaffold and integration point, but it is not the primary live demo path yet.
 
-Nvidia Jetson Orin: The edge compute node that hosts FastAPI, the consensus runtime, and optional local LLM tooling.
+## 3. Current Live Architecture
 
-ESP32 Microcontrollers: Physical representatives of field nodes and relays for the hardware demo path.
+### A. Command Ingress
 
-B. Command and Intent Layer
+Commands enter through one of three live paths:
 
-Primary input: direct structured swarm commands submitted by the UI or tests.
+- browser push-to-talk in the React command center
+- direct backend requests to `/api/voice-command`
+- Jetson plus ESP32 push-to-talk through [../base_station/headless/serial_ptt_listener.py](../base_station/headless/serial_ptt_listener.py)
 
-Optional input: text or audio commands routed through `ai_bridge.py`.
+The route name `/api/voice-command` is legacy. It also accepts already-structured command payloads.
 
-LLM path: Ollama running a local model to normalize operator language into safe command JSON.
+### B. Backend Runtime
 
-Audio path: ElevenLabs helpers for speech-to-text and text-to-speech when those interfaces are useful.
+The backend in [../base_station/api/main.py](../base_station/api/main.py) is the central integration hub.
 
-C. Backend and Communications
+It currently handles:
 
-API: Python FastAPI for orchestration and integration.
+- command parsing and normalization
+- staged execute flow for destructive commands
+- scenario loading and map-editor persistence
+- operator / soldier status routes
+- compute-drone and image-processing routes
+- WebSocket updates to the frontend
+- relay mirroring to the Jetson listener's local `/relay` endpoint
 
-Graph Logic: Python + NetworkX for topology, propagation, disruption handling, and consensus simulation.
+The swarm runtime in [../base_station/core/swarm_logic.py](../base_station/core/swarm_logic.py) provides:
 
-Messaging: Mosquitto MQTT for hardware publishing when the ESP32 path is connected.
+- adaptive gossip propagation
+- a raft-style comparison path
+- scenario-backed topology
+- mission and propagation state
+- delivery summaries and timing output
 
-Sync: WebSockets from FastAPI to React for real-time state updates.
+### C. Frontend Command Center
 
-D. Frontend Command Center
+The UI in [../command_center/src/App.jsx](../command_center/src/App.jsx) is broader than a simple graph.
 
-Framework: React + Vite + Tailwind CSS.
+It currently includes:
 
-Visualization: D3-based swarm graph and live state panels.
+- a canvas-based tactical map through [../command_center/src/components/SwarmCanvas.jsx](../command_center/src/components/SwarmCanvas.jsx)
+- a pinned mission banner
+- command history
+- soldier selection
+- scenario loading
+- map editing and overlays
+- suggested commands
+- browser push-to-talk
 
-Role: Show topology, propagation order, node activity, and benchmark-driven state in a single operator-facing view.
+### D. Relay Hardware Path
 
-4. Live Demo Flow
+The current hardware path is:
 
-1. Operator issues a swarm command.
-   - Preferred current framing: structured command from the UI or a test payload.
-   - Optional framing: voice/text command converted by `ai_bridge.py`.
-2. Backend normalizes the command into a safe swarm intent.
-3. `swarm_logic.py` executes either adaptive gossip or the TCP/Raft-style baseline.
-4. FastAPI broadcasts the resulting topology and state transitions to the React UI.
-5. When hardware is enabled, the same command path can be mirrored to MQTT and ESP-NOW for a physical relay demo.
-6. Benchmark outputs explain latency, bandwidth, and fault-tolerance tradeoffs between the two coordination approaches.
+1. backend sends a relayable command event
+2. Jetson listener accepts it on local `/relay`
+3. listener writes `RELAY ...` over USB serial to the gateway ESP32
+4. gateway sends encrypted relay packets over ESP-NOW
+5. field nodes acknowledge, report status, and optionally forward
 
-5. API and Data Contracts
+This path is implemented in:
 
-Normalized command shape:
+- [../base_station/headless/serial_ptt_listener.py](../base_station/headless/serial_ptt_listener.py)
+- [../hardware/gateway_node/src/main.cpp](../hardware/gateway_node/src/main.cpp)
+- [../hardware/field_node/src/main.cpp](../hardware/field_node/src/main.cpp)
+- [../hardware/common/relay_protocol.h](../hardware/common/relay_protocol.h)
 
-```json
-{
-  "intent": "swarm_command",
-  "target_location": "Grid Alpha",
-  "action_code": "SEARCH",
-  "consensus_algorithm": "gossip",
-  "origin": "soldier-1"
-}
-```
+## 4. What Is Real Today Vs. What Is Still A Hackathon Shortcut
 
-Representative WebSocket payload:
+### Real Today
 
-```json
-{
-  "event": "gossip_update",
-  "algorithm": "gossip",
-  "active_nodes": ["gateway", "recon-1", "attack-1"],
-  "target_x": 150,
-  "target_y": -50,
-  "status": "propagating",
-  "benchmark": {
-    "latency": {
-      "gossip_avg_ms": 0,
-      "raft_avg_ms": 0
-    }
-  }
-}
-```
+- local FastAPI backend
+- live WebSocket UI
+- command parsing with staged execute behavior
+- scenario loading and map editing
+- Jetson-based serial PTT path
+- Jetson-to-ESP32 relay bridge
+- ESP-NOW field-node relay behavior
+- compute-drone and image-processing API scaffold
 
-Note: the event name `gossip_update` remains in the current implementation for frontend compatibility, even when the selected algorithm is the TCP/Raft baseline.
+### Still A Shortcut Or Compatibility Artifact
 
-The command lifecycle now also includes:
+- `gossip_update` is still the main UI event name even when the selected comparison path is not literally gossip-only
+- `/api/voice-command` is still the name of the main command intake route
+- `mqtt_client.py` exists, but it is not the primary live relay path
+- some hardware validation is still best demonstrated through ACK / STATUS logs rather than a polished hardware telemetry panel in the UI
 
-- `command_pending` when an `ATTACK_AREA` command is staged and waiting on `EXECUTE`
-- `command_canceled` when a staged command is cleared by `DISREGARD`
+## 5. Deployment Framing
+
+The best honest deployment framing for this repo is:
+
+### Current deployment shape
+
+- Jetson hosts the backend and the serial relay bridge
+- laptop or desktop hosts the React command center
+- gateway ESP32 stays tethered to the Jetson
+- two field ESP32 nodes demonstrate bounded multi-hop relay
+
+### Intended hardened deployment
+
+- stronger task envelopes and authority checks
+- explicit task versioning and cancellation semantics
+- richer UI surfacing of hardware acknowledgements
+- more mature compute-vision integration for recon-to-strike workflows
+
+## 6. Why This Repo Exists
+
+This repository is trying to prove three things at once:
+
+1. command-and-control can stay local and resilient in DDIL conditions
+2. swarm state and relay behavior can be made legible to operators in real time
+3. the same architecture can grow into a more vision-driven recon-to-decision stack without changing the core control model

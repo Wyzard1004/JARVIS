@@ -1,65 +1,55 @@
 # Setup Guide
 
-> **Target**: Command UI + backend integration for JARVIS
+This guide matches the stack that is live in the repo right now:
 
-This guide reflects the repo as it exists now: a consensus-first swarm simulation with a working FastAPI backend, React command center, and optional AI/audio adapters.
+- backend on the Jetson or a development machine
+- React command center on a laptop or desktop
+- optional Jetson serial listener for the ESP32 push-to-talk and relay bridge
+- optional ESP32 gateway plus field nodes for the physical relay demo
 
-## What Is Already Wired
+## 1. Know The Current Startup Model
 
-### Backend
+There are three distinct runtime pieces:
 
-File: `base_station/api/main.py`
+1. FastAPI backend in [../base_station/api/main.py](../base_station/api/main.py)
+2. React frontend in [../command_center/src/App.jsx](../command_center/src/App.jsx)
+3. Jetson listener / relay bridge in [../base_station/headless/serial_ptt_listener.py](../base_station/headless/serial_ptt_listener.py)
 
-Current endpoints and behavior:
+The relay hardware path depends on all three when you want the full demo.
 
-- `GET /health`
-- `GET /api/swarm-state`
-- `POST /api/voice-command`
-  - legacy route name
-  - accepts direct structured swarm payloads
-  - also accepts text commands routed through `ai_bridge.py`
-- `POST /api/transcribe-command`
-  - optional audio upload path
-- `ws://localhost:8000/ws/swarm`
+## 2. Backend Setup
 
-The backend is already integrated with:
-
-- `base_station/core/swarm_logic.py`
-- `base_station/core/ai_bridge.py`
-
-It is **not yet fully wired** to `mqtt_client.py` for hardware publishing.
-
-### Frontend
-
-Files:
-
-- `command_center/src/App.jsx`
-- `command_center/src/components/SwarmGraph.jsx`
-- `command_center/src/components/StatusPanel.jsx`
-- `command_center/src/components/PushToTalkButton.jsx`
-
-Current frontend behavior:
-
-- opens a WebSocket to the backend
-- renders topology and swarm state in real time
-- tracks command history
-- still exposes push-to-talk as an input path
-
-The frontend works today, but the repo narrative should treat direct swarm commands and consensus behavior as primary.
-
-## Local Setup
-
-### Backend (PowerShell)
+### Windows PowerShell or local development shell
 
 ```powershell
 cd base_station
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
-python -m uvicorn api.main:app --reload --host 0.0.0.0 --port 8000
+python -m uvicorn api.main:app --host 0.0.0.0 --port 8000
 ```
 
-### Frontend
+### Linux / Jetson
+
+```bash
+cd base_station
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+python -m uvicorn api.main:app --host 0.0.0.0 --port 8000
+```
+
+### Important note
+
+The backend boots into the blank workspace by default. Load a populated scenario from the UI or use:
+
+```bash
+curl -X POST http://127.0.0.1:8000/api/scenarios/load \
+  -H "Content-Type: application/json" \
+  -d '{"scenario_key":"scenarios/village_reconnaissance_patrol.json"}'
+```
+
+## 3. Frontend Setup
 
 ```powershell
 cd command_center
@@ -67,155 +57,166 @@ npm install
 npm run dev
 ```
 
-### Remote Backend Over Tailscale
-
-When the backend runs on a different machine, configure the command center to use the backend machine's Tailscale address.
-
-Start from `command_center/env.remote.example`, then create `command_center/.env.local` with:
-
-```bash
-VITE_API_BASE_URL=http://philly-backend.example.ts.net:8000
-```
-
-`VITE_WEBSOCKET_URL` is optional. If it is omitted, the frontend derives `/ws/swarm` from `VITE_API_BASE_URL`.
-
-For the Jetson listener, set:
-
-```bash
-export JARVIS_LISTENER_API_URL=http://philly-backend.example.ts.net:8000/api/transcribe-command
-export JARVIS_OPERATOR_NODE=soldier-1
-```
-
 Open:
 
-- [http://localhost:8000/docs](http://localhost:8000/docs)
-- [http://localhost:5173](http://localhost:5173)
+- `http://localhost:5173`
 
-## Recommended Integration View
+The frontend expects the backend over:
 
-### 1. Direct Command Path
+- `VITE_API_BASE_URL`
+- `VITE_WEBSOCKET_URL` or an API-derived fallback
 
-This is the cleanest current path for the swarm demo:
-
-```json
-{
-  "origin": "soldier-1",
-  "target_location": "Grid Alpha",
-  "action_code": "SEARCH",
-  "consensus_algorithm": "gossip"
-}
-```
-
-Submit that payload to `POST /api/voice-command`.
-
-Even though the route name says "voice", the backend will bypass language parsing when a structured payload is already present.
-
-### 2. Optional Text Command Path
+If the backend is on another machine, create `command_center/.env.local` from `command_center/env.remote.example`.
 
 Example:
 
-```json
-{
-  "transcribed_text": "JARVIS, move to Grid Alpha, over.",
-  "consensus_algorithm": "raft"
-}
+```bash
+VITE_API_BASE_URL=http://100.108.243.35:8000
+VITE_WEBSOCKET_URL=ws://100.108.243.35:8000/ws/swarm
 ```
 
-The backend will:
+## 4. Jetson Listener Setup
 
-1. run `process_voice_command()`
-2. normalize the result into a swarm intent
-3. dispatch through the requested consensus algorithm
+The Jetson listener does two jobs:
 
-### 3. Optional Audio Path
+- reads push-to-talk events from the gateway ESP32 over USB serial
+- exposes the local `/relay` and `/status` bridge used by the backend for hardware mirroring
 
-The audio route is:
+Start it with:
 
-```text
-POST /api/transcribe-command
+```bash
+cd base_station
+source .venv/bin/activate
+set -a
+source .env
+set +a
+python headless/serial_ptt_listener.py
 ```
 
-Use this only when you specifically want to demo audio input. It should not be treated as the architectural center of the project.
+### Recommended `.env` fields
 
-## What the Swarm Runtime Produces
+The most important runtime fields are:
 
-`swarm_logic.py` already returns:
+- `JARVIS_SERIAL_PORT`
+- `JARVIS_AUDIO_DEVICE_INDEX`
+- `JARVIS_AUDIO_DEVICE_RATE`
+- `JARVIS_LISTENER_API_URL`
+- `JARVIS_OPERATOR_NODE`
 
-- nodes and edges
-- active nodes
-- propagation order
-- total propagation time
-- delivery summary
-- search state and engagements
-- benchmark data
-- supported algorithms
+On Jetson, prefer a stable serial path such as:
 
-The key comparison exposed today is:
-
-- `gossip`
-- `raft`
-
-The runtime also advertises future candidates such as PBFT and epidemic push-pull, but those are not implemented yet.
-
-## WebSocket Contract
-
-The frontend listens on:
-
-```text
-ws://localhost:8000/ws/swarm
+```bash
+/dev/serial/by-id/usb-Silicon_Labs_CP2102_USB_to_UART_Bridge_Controller_0001-if00-port0
 ```
 
-Representative update:
+rather than `/dev/ttyUSB0`, which can move around.
 
-```json
-{
-  "event": "gossip_update",
-  "algorithm": "gossip",
-  "status": "propagating",
-  "active_nodes": ["gateway", "recon-1", "attack-1"],
-  "total_propagation_ms": 184,
-  "benchmark": {
-    "latency": {
-      "gossip_avg_ms": 0,
-      "raft_avg_ms": 0
-    }
-  }
-}
+## 5. ESP32 Hardware Setup
+
+### Gateway
+
+The gateway firmware lives in:
+
+- [../hardware/gateway_node/src/main.cpp](../hardware/gateway_node/src/main.cpp)
+
+It stays USB-connected to the Jetson and handles:
+
+- PTT button events
+- serial status feedback
+- ESP-NOW relay transmission
+- ACK / STATUS uplink back to the Jetson listener
+
+### Field Nodes
+
+The field-node firmware lives in:
+
+- [../hardware/field_node/src/main.cpp](../hardware/field_node/src/main.cpp)
+
+Current roles:
+
+- `field_relay` = relay-capable node
+- `field_leaf` = downstream leaf node
+
+These are flashed through PlatformIO from:
+
+- `hardware/field_node/platformio.ini`
+
+## 6. Demo Startup Sequences
+
+### A. Manual three-terminal flow
+
+#### Terminal 1: backend
+
+```bash
+cd ~/JARVIS_repo/base_station
+source .venv/bin/activate
+python -m uvicorn api.main:app --host 0.0.0.0 --port 8000
 ```
 
-Note: the event name is still `gossip_update` for compatibility, even when the backend dispatches the TCP/Raft baseline.
+#### Terminal 2: listener
 
-Staged destructive commands introduce two additional lifecycle events:
-
-```json
-{
-  "event": "command_pending",
-  "status": "pending_execute",
-  "pending_execute": {
-    "present": true
-  }
-}
+```bash
+cd ~/JARVIS_repo/base_station
+source .venv/bin/activate
+set -a
+source .env
+set +a
+python headless/serial_ptt_listener.py
 ```
 
-and:
+#### Terminal 3: frontend
 
-```json
-{
-  "event": "command_canceled",
-  "status": "canceled"
-}
+```powershell
+cd command_center
+npm run dev
 ```
 
-## What Is Still Missing
+### B. Windows launcher
 
-- MQTT publisher wired into live dispatch
-- end-to-end ESP32 demo synchronization
-- first-class structured command controls in the React UI
-- broader mission scenarios and topology growth
+For the current laptop-plus-Jetson workflow, use:
 
-## Suggested Next Moves for Section 4
+- [../scripts/start-demo-stack.ps1](../scripts/start-demo-stack.ps1)
 
-1. Keep the backend route behavior as-is, but present it as command-first in docs and demos.
-2. Add a structured command panel to the UI so gossip vs. raft can be compared directly.
-3. Only rely on push-to-talk when the demo specifically benefits from it.
-4. Wire MQTT after the control and visualization path is stable.
+That script opens the demo stack in separate terminals and is the easiest way to bring the system up repeatedly during the hackathon.
+
+## 7. What Is Not Part Of The Current Deployment Path
+
+The current docs intentionally do not treat MQTT as part of the primary relay story.
+
+Why:
+
+- the live backend mirrors relay commands to the listener over local HTTP
+- the listener writes to the gateway over USB serial
+- the gateway and field nodes use ESP-NOW
+
+`mqtt_client.py` remains in the repo as an earlier or alternate transport experiment, but it is not the main path to explain or demonstrate right now.
+
+## 8. First Smoke Checks
+
+### Backend
+
+```bash
+curl http://127.0.0.1:8000/health
+```
+
+### Frontend
+
+- open `http://localhost:5173`
+- verify the connection badge becomes connected
+
+### Listener
+
+- verify it prints `Serial button listener online`
+- verify it prints `Relay bridge listening on http://127.0.0.1:8765`
+
+### Relay bridge
+
+```bash
+curl http://127.0.0.1:8765/status
+```
+
+## 9. Recommended GitHub-Facing Demo Narrative
+
+If you need one setup sentence that matches the code:
+
+> JARVIS currently runs as a local FastAPI base station with a React command center, a Jetson-hosted serial relay bridge, and an ESP-NOW hardware relay chain, while the compute-vision lane is present as an integrated scaffold that will be hardened after the hackathon.

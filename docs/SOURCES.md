@@ -2,6 +2,8 @@
 
 This document captures the public-source research that should shape how JARVIS talks, parses, and presents itself to judges from military and national-security backgrounds.
 
+Project name: JARVIS (Joint Autonomous Recon and Vision Integrated Swarm)
+
 The intent is not to turn the repo into a doctrinal system. The intent is to make the terminology, operator flow, and command vocabulary sound grounded, disciplined, and credible.
 
 ## Core Position
@@ -15,9 +17,9 @@ The strongest message from the research is:
 
 That maps well onto the current codebase, which already has:
 
-- a constrained command schema in [base_station/core/ai_bridge.py](</C:/Users/richa/OneDrive - PennO365/JARVIS/JARVIS/base_station/core/ai_bridge.py:1>)
-- a direct operator-to-parser path through `/api/transcribe-command` in [base_station/api/main.py](</C:/Users/richa/OneDrive - PennO365/JARVIS/JARVIS/base_station/api/main.py:1>)
-- a button-driven voice flow through [base_station/headless/serial_ptt_listener.py](</C:/Users/richa/OneDrive - PennO365/JARVIS/JARVIS/base_station/headless/serial_ptt_listener.py:1>)
+- a constrained command schema in [../base_station/core/ai_bridge.py](../base_station/core/ai_bridge.py)
+- a direct operator-to-parser path through `/api/transcribe-command` in [../base_station/api/main.py](../base_station/api/main.py)
+- a button-driven voice flow through [../base_station/headless/serial_ptt_listener.py](../base_station/headless/serial_ptt_listener.py)
 
 ## What The Sources Support
 

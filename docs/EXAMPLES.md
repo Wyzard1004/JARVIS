@@ -2,6 +2,8 @@
 
 This file gives you realistic ways to talk to JARVIS during testing and demos.
 
+Project name: JARVIS (Joint Autonomous Recon and Vision Integrated Swarm)
+
 It is split into:
 
 - `Works with the current parser today`: phrases supported by the implemented `2.0` schema
@@ -42,7 +44,7 @@ ESP32 LED meaning in the current button demo:
 
 ## Works With The Current Parser Today
 
-These match the implemented parser in [base_station/core/ai_bridge.py](</C:/Users/richa/OneDrive - PennO365/JARVIS/JARVIS/base_station/core/ai_bridge.py:1>):
+These match the implemented parser in [../base_station/core/ai_bridge.py](../base_station/core/ai_bridge.py):
 
 - `MOVE_TO`
 - `ATTACK_AREA`

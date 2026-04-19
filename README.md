@@ -1,144 +1,169 @@
-# JARVIS: Joint Adaptive Relay for Variable Interoperable Swarms
+# JARVIS: Joint Autonomous Recon and Vision Integrated Swarm
 
-> **Swarm Consensus and Coordination for DDIL Environments**  
-> Critical Ops Hackathon (April 2026)
+> Hardware-in-the-loop command, relay, and reconnaissance stack for DDIL swarm demos.
 
-## The Pitch
+This repository is the current hackathon implementation of JARVIS. The live codebase combines:
 
-JARVIS is a hardware-in-the-loop swarm coordination system for **disconnected, denied, or intermittent (DDIL) environments**. The core problem is not voice control by itself; it is resilient coordination across human operators, relay nodes, and autonomous platforms when links degrade, partition, or disappear.
+- a FastAPI base station that normalizes commands and runs swarm coordination
+- a React command center with a tactical map, scenario tools, and live mission state
+- a Jetson-side serial push-to-talk listener that also acts as the local relay bridge
+- ESP32 gateway and field-node firmware that relay commands over ESP-NOW
+- an early compute-drone and image-processing lane that supports the "vision integrated" part of the project story
 
-The current repo is centered on a contested-environment simulation that compares a **leaderless adaptive gossip protocol** against a **leader-based TCP/Raft-style baseline**, visualizes propagation in real time, and reports benchmark data for latency, control-plane bandwidth, and fault tolerance. A local LLM and audio path still exist, but they are best understood as **optional operator interfaces** into the swarm rather than the identity of the project.
+## What The Repo Actually Does Today
 
-### Hackathon Challenge Statements
+The current deployment story is:
 
-- **Primary**: Problem 10 - Swarm Coordination Protocol for Contested Environments
-- **Secondary**: Problem 16 - Edge Inference on Resource-Constrained Hardware
+1. A command enters through the browser, a direct API request, or the Jetson/ESP32 push-to-talk path.
+2. `base_station/api/main.py` normalizes the command and dispatches it through the swarm runtime.
+3. The backend streams state updates to the React UI over WebSocket.
+4. The backend mirrors relayable command events to the Jetson listener's local `/relay` bridge.
+5. `base_station/headless/serial_ptt_listener.py` sends those packets over USB serial to the gateway ESP32.
+6. The gateway rebroadcasts them over ESP-NOW to the field nodes, which acknowledge and optionally forward them.
 
----
+That is the real deployed relay path in this repo right now. The docs below are written around that path, not around earlier MQTT-only plans.
 
-## What Is Working Now
+## Current Reality Vs. Deployment Target
 
-- **Consensus runtime** in `base_station/core/swarm_logic.py`
-  - Adaptive gossip simulation with retries, TTL, relay fanout, and disruption handling
-  - TCP/Raft-style baseline for comparison
-  - Delivery summaries, mission/search state, object reports, and built-in benchmark data
-- **FastAPI backend** in `base_station/api/main.py`
-  - `GET /health`
-  - `GET /api/swarm-state`
-  - `POST /api/voice-command` for direct structured payloads or text commands
-  - `POST /api/transcribe-command` for optional audio upload
-  - `ws://localhost:8000/ws/swarm` for real-time updates
-- **React command center**
-  - WebSocket-driven graph visualization
-  - Status panel and command history
-  - Push-to-talk UI still present as an optional demo path
-- **Optional AI bridge**
-  - Rule-based and Ollama-backed command parsing
-  - ElevenLabs speech-to-text and text-to-speech helpers
+This repo was built under hackathon time pressure, so some internal names and modules are still legacy:
 
----
+- `/api/voice-command` accepts direct structured commands too; the route name is historical
+- `gossip_update` is still the main UI event name even when the backend is using the raft-style comparison path
+- `mqtt_client.py` exists, but the live relay demo path is `serial_ptt_listener.py` plus ESP-NOW, not MQTT
+- the project already includes compute-drone and image-processing endpoints, but the main live demo is still command, relay, and visualization rather than full autonomous onboard vision
 
-## System Architecture
+The intended deployment direction is:
+
+- hardened task envelopes and authority checks
+- stronger hardware/UI timing synchronization
+- richer compute-vision integration using the existing compute-drone lane
+- broader scenario coverage and more realistic contested-network behavior
+
+## Live Architecture
 
 ```text
-+-------------------------------------------+
-| OPERATOR / CONTROL NODE                   |
-| - direct structured command               |
-| - optional text or audio command          |
-+-------------------------------------------+
-                    |
-                    v
-  +---------------------------------------+
-  | NVIDIA JETSON ORIN (Base Station)     |
-  | FastAPI + swarm_logic + ai_bridge      |
-  | - adaptive gossip                      |
-  | - TCP/Raft baseline                    |
-  | - benchmark + mission state            |
-  +---------------------------------------+
-          |                         |
-          v                         v
-  +------------------+      +------------------+
-  | React UI         |      | MQTT / ESP-NOW   |
-  | - graph view     |      | - gateway node   |
-  | - status panel   |      | - field nodes    |
-  | - command input  |      | - LED proof      |
-  +------------------+      +------------------+
++--------------------------------------------------------------+
+| Operator Inputs                                              |
+| - browser push-to-talk                                       |
+| - typed / direct API command                                 |
+| - Jetson + ESP32 push-to-talk                                |
++--------------------------------------------------------------+
+                             |
+                             v
++--------------------------------------------------------------+
+| Jetson Base Station                                          |
+| FastAPI + ai_bridge + swarm_logic                            |
+| - command normalization                                      |
+| - gossip / raft-style comparison                             |
+| - mission state + scenarios + map editor state               |
+| - WebSocket stream to UI                                     |
++--------------------------------------------------------------+
+                 |                                  |
+                 v                                  v
++------------------------------------+   +---------------------------+
+| React Command Center               |   | Jetson Relay Bridge       |
+| - SwarmCanvas tactical map         |   | serial_ptt_listener.py    |
+| - mission banner + history         |   | /relay + /status          |
+| - scenario loader + map editor     |   | USB serial to gateway     |
++------------------------------------+   +---------------------------+
+                                                     |
+                                                     v
+                                      +------------------------------+
+                                      | ESP32 Relay Demo             |
+                                      | gateway -> drone-1 -> drone-2|
+                                      | ESP-NOW + ACK / STATUS       |
+                                      +------------------------------+
 ```
 
-The current demo topology in code includes:
+## Major Components
 
-- a gateway relay
-- two human operator nodes
-- one recon drone
-- two attack drones
+### Backend
 
-That topology can expand later, but the implemented repo today is already organized around contested mesh coordination and consensus behavior.
+- [base_station/api/main.py](base_station/api/main.py)
+  - FastAPI routes
+  - WebSocket broadcast
+  - command lifecycle
+  - scenario loading and map-editor endpoints
+  - hardware relay mirroring
+- [base_station/core/swarm_logic.py](base_station/core/swarm_logic.py)
+  - topology and scenario state
+  - adaptive gossip path
+  - raft-style comparison path
+  - delivery summaries and timing
+- [base_station/core/ai_bridge.py](base_station/core/ai_bridge.py)
+  - safe command parsing
+  - radio-style phrasing support
+  - staged execute flow for destructive commands
+- [base_station/core/compute_drone_controller.py](base_station/core/compute_drone_controller.py)
+  - simulated image reception
+  - target detection / threat classification scaffold
+  - strike-decision support objects
 
----
+### Jetson Runtime
 
-## Current Status (April 18, 2026)
+- [base_station/headless/serial_ptt_listener.py](base_station/headless/serial_ptt_listener.py)
+  - serial PTT listener
+  - audio upload to `/api/transcribe-command`
+  - local `/relay` and `/status` bridge
+  - gateway ACK / STATUS handling
+- [base_station/headless/jetson_listener.py](base_station/headless/jetson_listener.py)
+  - wake-word listener path
+  - still present, but not the main hardware demo path right now
 
-### Implemented
+### Frontend
 
-- **Swarm coordination runtime**
-  - Adaptive gossip and TCP/Raft-style baseline are both implemented
-  - Benchmark data is surfaced through the runtime and API responses
-  - Search state, propagation order, delivery summaries, and disruption modeling are live
-- **Backend integration**
-  - Swarm logic is wired into FastAPI
-  - Direct payloads can bypass voice parsing
-  - Algorithm selection is supported through request payloads
-- **Frontend integration**
-  - React app connects to the backend over WebSocket
-  - Real-time state is rendered in the graph and status panel
-  - Command history updates when commands are dispatched
-- **AI bridge**
-  - `ai_bridge.py` is implemented with safe fallbacks, rule parsing, and optional Ollama use
-  - Audio transcription and confirmation helpers exist, but they are not the primary focus
+- [command_center/src/App.jsx](command_center/src/App.jsx)
+  - application shell
+  - WebSocket state handling
+  - mission pinning
+  - scenario and map editor controls
+- [command_center/src/components/SwarmCanvas.jsx](command_center/src/components/SwarmCanvas.jsx)
+  - canvas-based tactical map
+  - communication playback overlay
+  - continuous-world to 8x8 grid projection
+- [command_center/src/components/PushToTalkButton.jsx](command_center/src/components/PushToTalkButton.jsx)
+  - browser microphone path
 
-### In Progress
+### Hardware
 
-- Wiring MQTT publishing into the live FastAPI dispatch loop
-- Completing ESP32 hardware sync for the physical propagation demo
-- Rebalancing the UI so structured swarm commands are first-class instead of voice-first
-- Expanding scenarios, node types, and contested-network behaviors beyond the current demo topology
+- [hardware/gateway_node/src/main.cpp](hardware/gateway_node/src/main.cpp)
+  - USB serial gateway
+  - ESP-NOW transmit / receive
+  - relay packet translation
+- [hardware/field_node/src/main.cpp](hardware/field_node/src/main.cpp)
+  - relay node and leaf node behavior
+  - duplicate suppression
+  - ACK / STATUS responses
+  - bounded forwarding
+- [hardware/common/relay_protocol.h](hardware/common/relay_protocol.h)
+  - shared packet format
+  - encrypted relay helpers
 
-### Secondary / Optional
+## What "Vision Integrated" Means In This Repo
 
-- Ollama prompt tuning and parser refinement
-- Audio transcription reliability and TTS polish
+The rename is accurate, but the implementation is staged.
 
----
+Today, the codebase already has:
 
-## Getting Started
+- compute-drone state in scenarios
+- compute-drone API endpoints in `base_station/api/main.py`
+- a simulated image-processing and threat-analysis controller in `base_station/core/compute_drone_controller.py`
 
-### Prerequisites
+What it does not yet have is a production-grade, fielded computer-vision inference pipeline running end to end on the live hardware demo. The markdown in this repo treats that lane as an implemented scaffold and a deployment target, not as something already fully operational in the field demo.
 
-- Python 3.10+
-- Node.js 18+
-- Virtual environment support
+## Quick Start
 
-### Backend Setup (PowerShell)
+### 1. Backend
 
 ```powershell
 cd base_station
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
-python -m uvicorn api.main:app --reload --host 0.0.0.0 --port 8000
+python -m uvicorn api.main:app --host 0.0.0.0 --port 8000
 ```
 
-If you prefer bash:
-
-```bash
-cd base_station
-python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-python -m uvicorn api.main:app --reload --host 0.0.0.0 --port 8000
-```
-
-### Frontend Setup
+### 2. Frontend
 
 ```powershell
 cd command_center
@@ -146,232 +171,42 @@ npm install
 npm run dev
 ```
 
-### Remote Tailscale Setup
-
-If the backend is running on another machine, point the command center and Jetson listener at that host instead of `localhost`.
-
-Frontend example:
+### 3. Jetson Listener / Relay Bridge
 
 ```bash
-cd command_center
-cp env.remote.example .env.local
+cd base_station
+source .venv/bin/activate
+set -a
+source .env
+set +a
+python headless/serial_ptt_listener.py
 ```
 
-Set `VITE_API_BASE_URL` to the backend machine's Tailscale IP or MagicDNS name, for example:
+### 4. Optional Windows Launcher
 
-```bash
-VITE_API_BASE_URL=http://philly-backend.example.ts.net:8000
-```
+If you are running the website locally on a Windows laptop while targeting a Jetson backend, use:
 
-The app will derive the WebSocket URL automatically unless you also set `VITE_WEBSOCKET_URL`.
+- [scripts/start-demo-stack.ps1](scripts/start-demo-stack.ps1)
 
-Jetson example:
+That script opens backend, listener, and frontend terminals for the current demo workflow.
 
-```bash
-export JARVIS_LISTENER_API_URL=http://philly-backend.example.ts.net:8000/api/transcribe-command
-export JARVIS_OPERATOR_NODE=soldier-1
-```
+## Important Current Notes
 
-### Verify
+- The backend starts on a blank workspace unless you load a populated scenario.
+- The UI is broader than a simple graph viewer now; it includes scenario loading, map editing, suggested commands, command history, and pinned mission state.
+- The live relay hardware path is USB serial plus ESP-NOW.
+- MQTT is not the primary deployment story in the current repo.
 
-- FastAPI docs open at [http://localhost:8000/docs](http://localhost:8000/docs)
-- React UI opens at [http://localhost:5173](http://localhost:5173)
-- WebSocket state appears in the command center
+## Docs
 
----
+- [docs/README.md](docs/README.md)
+- [docs/OVERVIEW.md](docs/OVERVIEW.md)
+- [docs/SETUP.md](docs/SETUP.md)
+- [docs/TESTING.md](docs/TESTING.md)
+- [docs/COMMAND_SCHEMA.md](docs/COMMAND_SCHEMA.md)
+- [docs/ROADMAP.md](docs/ROADMAP.md)
+- [docs/CHANGE_PROPOSAL.md](docs/CHANGE_PROPOSAL.md)
+- [docs/EXAMPLES.md](docs/EXAMPLES.md)
+- [docs/SOURCES.md](docs/SOURCES.md)
 
-## API Endpoints
-
-### Health
-
-```http
-GET /health
-```
-
-### Command Intake
-
-```http
-POST /api/voice-command
-Content-Type: application/json
-```
-
-The route name is legacy from the earlier demo framing, but it already supports **direct structured swarm commands** in addition to transcribed text.
-
-Example direct payload:
-
-```json
-{
-  "origin": "soldier-1",
-  "target_location": "Grid Alpha",
-  "action_code": "SEARCH",
-  "consensus_algorithm": "gossip"
-}
-```
-
-Example text payload:
-
-```json
-{
-  "transcribed_text": "JARVIS, move to Grid Alpha, over.",
-  "consensus_algorithm": "raft"
-}
-```
-
-Current parser highlights:
-
-- callsign-first phrasing such as `JARVIS, move to Grid Alpha, over.`
-- staged attack flow:
-  - `JARVIS, attack Grid Bravo, over.` -> `command_pending`
-  - `JARVIS, execute, over.` -> live dispatch
-- typed location detail is returned alongside legacy string fields
-
-### Optional Audio Path
-
-```http
-POST /api/transcribe-command
-Content-Type: multipart/form-data
-```
-
-Uploads microphone audio, runs the optional transcription/parsing path, and dispatches the resulting swarm intent.
-
-### Swarm State
-
-```http
-GET /api/swarm-state
-```
-
-Returns nodes, edges, active nodes, propagation order, delivery summary, benchmark data, and supported algorithms.
-
-### WebSocket
-
-```text
-ws://localhost:8000/ws/swarm
-```
-
-Current event naming still uses `gossip_update` for compatibility with the existing frontend, even when the selected algorithm is the TCP/Raft baseline.
-
-Additional lifecycle events now used by staged commands:
-
-- `command_pending`
-- `command_canceled`
-
----
-
-## Project Structure
-
-The repo root intentionally stays small now. Supporting documentation lives under `docs/`, and older implementation notes are kept in `docs/archive/` instead of crowding the top level.
-
-```text
-jarvis-swarm/
-+-- base_station/
-|   +-- api/
-|   |   +-- main.py                 # FastAPI routes and dispatch
-|   +-- core/
-|   |   +-- ai_bridge.py            # Optional text/audio command adapter
-|   |   +-- swarm_logic.py          # Consensus simulation and benchmark runtime
-|   |   +-- mqtt_client.py          # Hardware messaging client
-|   +-- requirements.txt
-|
-+-- command_center/
-|   +-- src/
-|   |   +-- App.jsx
-|   |   +-- components/
-|   |       +-- SwarmGraph.jsx      # Real-time topology visualization
-|   |       +-- PushToTalkButton.jsx # Optional audio input UI
-|   |       +-- StatusPanel.jsx
-|
-+-- hardware/
-|   +-- gateway_node/
-|   +-- field_node/
-|
-+-- simulations/
-|   +-- tcp_vs_gossip.py            # Standalone comparison utilities
-|
-+-- docs/
-|   +-- README.md                 # Docs hub and source-of-truth index
-|   +-- OVERVIEW.md              # Project framing and system blueprint
-|   +-- SETUP.md                 # Local setup and integration notes
-|   +-- TESTING.md               # End-to-end testing guide
-|   +-- COMMAND_SCHEMA.md        # Command contract and examples
-|   +-- ROADMAP.md               # Current execution plan
-|   +-- reference/
-|   |   +-- AI_BRIDGE_SKETCH.md  # Parser design notes
-|   +-- archive/                 # Historical phase notes and superseded docs
-|
-+-- README.md
-```
-
----
-
-## Testing Checklist
-
-- [x] FastAPI backend starts without errors
-- [x] React frontend loads and connects over WebSocket
-- [x] Swarm state endpoint returns nodes, edges, and benchmark data
-- [x] Adaptive gossip and TCP/Raft baseline are both exposed by the backend
-- [x] Benchmark results are attached to consensus responses
-- [ ] MQTT publishing is wired into live dispatch
-- [ ] ESP32 gateway and field-node demo are synchronized end to end
-- [ ] Structured command controls are first-class in the UI
-- [ ] Additional topology roles and scenarios are added beyond the current demo set
-
----
-
-## Current Demo Story
-
-1. An operator injects a command through the UI, either as a structured control payload or through the optional voice path.
-2. The backend turns that input into a normalized swarm intent.
-3. `swarm_logic.py` executes either adaptive gossip or the TCP/Raft-style baseline.
-4. The result is broadcast to the React UI over WebSocket.
-5. When hardware integration is connected, the same command path can be mirrored to ESP32 nodes over MQTT and ESP-NOW.
-6. The benchmark layer reports why leaderless relay can outperform direct leader-based control in disrupted DDIL conditions.
-
----
-
-## Next Steps
-
-- Make direct structured swarm commands the primary UI path
-- Wire `mqtt_client.py` into the FastAPI dispatch flow
-- Expand disruption scenarios and operational topologies
-- Add more node classes and mission roles as the simulation grows
-- Keep voice, STT, and TTS as optional operator-interface layers instead of the main project story
-
----
-
-## Tech Stack Summary
-
-| Layer | Component | Tech | Status |
-|-------|-----------|------|--------|
-| Edge Inference | Base Station | Nvidia Jetson Orin + Ollama | Available |
-| Backend | API Server | FastAPI + Uvicorn | Running |
-| Frontend | UI | React 19 + Vite 8 + Tailwind 4 | Running |
-| Visualization | Graph | D3 force simulation | Active |
-| Consensus | Swarm Runtime | NetworkX + adaptive gossip + TCP/Raft baseline | Active |
-| Operator Interface | Command Parsing | Direct payloads + rules/Ollama | Active |
-| Audio | STT/TTS | ElevenLabs helpers | Optional |
-| Messaging | Pub/Sub | Mosquitto MQTT | In progress |
-| Hardware | Field Demo | ESP32 + ESP-NOW + LEDs | In progress |
-
----
-
-## References
-
-- **Docs Hub**: See [docs/README.md](docs/README.md)
-- **Overview**: See [docs/OVERVIEW.md](docs/OVERVIEW.md)
-- **Roadmap**: See [docs/ROADMAP.md](docs/ROADMAP.md)
-- **Setup Guide**: See [docs/SETUP.md](docs/SETUP.md)
-- **Testing Guide**: See [docs/TESTING.md](docs/TESTING.md)
-
-Anything in `docs/archive/` is preserved for history but should not be treated as the current source of truth.
-
----
-
-## License
-
-Internal hackathon project. All rights reserved.
-
----
-
-**Last Updated**: April 18, 2026  
-**Current Milestone**: Consensus-first simulation and command center integration  
-**Primary Narrative**: Swarm coordination in contested environments, with voice as an optional interface
+Anything under `docs/archive/` is preserved history, not the current source of truth.
