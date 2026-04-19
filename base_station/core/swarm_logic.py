@@ -201,7 +201,7 @@ class SwarmCoordinator:
     def _normalize_map_overlay(self, overlay: Dict | None) -> Dict:
         normalized = normalize_overlay(overlay)
         asset_path = normalized.get("asset_path")
-        if asset_path and not normalized.get("asset_url"):
+        if asset_path:
             normalized["asset_url"] = f"/scenario-assets/{Path(str(asset_path)).name}"
         if normalized.get("asset_url") and overlay and "visible" not in overlay:
             normalized["visible"] = True

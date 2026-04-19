@@ -9,6 +9,7 @@ from pathlib import Path
 BASE_STATION_DIR = Path(__file__).resolve().parents[1]
 BUNDLED_CONFIG_DIR = BASE_STATION_DIR / "config"
 BUNDLED_DEFAULT_SCENARIO_FILE = BUNDLED_CONFIG_DIR / "swarm_initial_state.json"
+BUNDLED_SCENARIO_LIBRARY_DIR = BUNDLED_CONFIG_DIR / "scenarios"
 BUNDLED_SCENARIO_ASSET_DIR = BASE_STATION_DIR / "scenario_assets"
 
 
@@ -37,11 +38,32 @@ def get_runtime_paths() -> dict[str, Path]:
         "base_station_dir": BASE_STATION_DIR,
         "bundled_config_dir": BUNDLED_CONFIG_DIR,
         "bundled_default_scenario_file": BUNDLED_DEFAULT_SCENARIO_FILE,
+        "bundled_scenario_library_dir": BUNDLED_SCENARIO_LIBRARY_DIR,
         "config_dir": config_dir,
         "default_scenario_file": default_scenario_file,
         "scenario_library_dir": scenario_library_dir,
+        "bundled_scenario_asset_dir": BUNDLED_SCENARIO_ASSET_DIR,
         "scenario_asset_dir": scenario_asset_dir,
     }
+
+
+def _seed_directory_if_missing(source_dir: Path, destination_dir: Path) -> list[str]:
+    seeded_names: list[str] = []
+    if not source_dir.exists():
+        return seeded_names
+
+    for source_path in source_dir.iterdir():
+        if not source_path.is_file():
+            continue
+
+        destination_path = destination_dir / source_path.name
+        if destination_path.exists():
+            continue
+
+        shutil.copy2(source_path, destination_path)
+        seeded_names.append(source_path.name)
+
+    return seeded_names
 
 
 def ensure_runtime_storage() -> dict[str, Path]:
@@ -79,5 +101,17 @@ def ensure_runtime_storage() -> dict[str, Path]:
                 + "\n",
                 encoding="utf-8",
             )
+
+    seeded_scenarios = _seed_directory_if_missing(
+        paths["bundled_scenario_library_dir"], paths["scenario_library_dir"]
+    )
+    seeded_assets = _seed_directory_if_missing(
+        paths["bundled_scenario_asset_dir"], paths["scenario_asset_dir"]
+    )
+
+    paths["seeded_scenario_names"] = seeded_scenarios
+    paths["seeded_asset_names"] = seeded_assets
+    paths["seeded_scenario_count"] = len(seeded_scenarios)
+    paths["seeded_asset_count"] = len(seeded_assets)
 
     return paths

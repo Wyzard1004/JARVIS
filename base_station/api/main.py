@@ -68,6 +68,16 @@ async def startup_event():
     print("[STARTUP] JARVIS Base Station initializing...")
     print("[STARTUP] FastAPI running on 0.0.0.0:8000")
     print("[STARTUP] WebSocket endpoint ready at ws://localhost:8000/ws/swarm")
+    print(
+        "[STARTUP] Runtime storage: "
+        f"config_dir={CONFIG_DIR} scenario_library_dir={SCENARIO_LIBRARY_DIR} "
+        f"scenario_asset_dir={SCENARIO_ASSET_DIR}"
+    )
+    print(
+        "[STARTUP] Seeded runtime content: "
+        f"scenarios={RUNTIME_PATHS.get('seeded_scenario_count', 0)} "
+        f"assets={RUNTIME_PATHS.get('seeded_asset_count', 0)}"
+    )
     swarm = get_swarm()
     print(f"[STARTUP] Swarm topology initialized: {len(swarm.graph.nodes)} nodes")
     print("[STARTUP] All systems nominal. Awaiting commands.")

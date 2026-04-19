@@ -29,6 +29,34 @@ class MapGeometryTests(unittest.TestCase):
 
 
 class SwarmEditorStateTests(unittest.TestCase):
+    def test_loading_scenario_rewrites_overlay_url_to_backend_served_asset(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config_path = Path(temp_dir) / "scenario.json"
+            config_path.write_text(
+                json.dumps(
+                    {
+                        "scenario": "Overlay URL Rewrite",
+                        "coordinate_space_size": 1000,
+                        "map_overlay": {
+                            "asset_url": "http://100.71.205.85:8000/scenario-assets/overlay-test.png",
+                            "asset_path": "scenario_assets/overlay-test.png",
+                            "opacity": 0.72,
+                            "visible": True,
+                        },
+                        "drones": [],
+                        "enemies": [],
+                        "structures": [],
+                        "special_entities": [],
+                        "initial_events": [],
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            swarm = SwarmCoordinator(config_path=str(config_path))
+
+            self.assertEqual(swarm.get_state()["map_overlay"]["asset_url"], "/scenario-assets/overlay-test.png")
+
     def test_apply_editor_state_and_save_persists_overlay_and_structures(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             config_path = Path(temp_dir) / "scenario.json"

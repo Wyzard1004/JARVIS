@@ -32,6 +32,31 @@ class RuntimePathTests(unittest.TestCase):
             self.assertEqual(scenario_library_dir, Path(temp_dir) / "config" / "scenarios")
             self.assertEqual(scenario_asset_dir, Path(temp_dir) / "scenario_assets")
 
+    def test_data_dir_seeds_bundled_scenarios_and_assets_without_overwriting_existing_files(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            scenario_library_dir = Path(temp_dir) / "config" / "scenarios"
+            scenario_library_dir.mkdir(parents=True, exist_ok=True)
+            existing_path = scenario_library_dir / "zarichne.json"
+            existing_path.write_text('{"scenario":"Custom Zarichne"}\n', encoding="utf-8")
+
+            with patch.dict(os.environ, {"JARVIS_DATA_DIR": temp_dir}, clear=False):
+                paths = ensure_runtime_storage()
+
+            bundled_scenario_names = {
+                path.name for path in paths["bundled_scenario_library_dir"].glob("*.json")
+            }
+            seeded_scenario_names = {path.name for path in paths["scenario_library_dir"].glob("*.json")}
+            bundled_asset_names = {
+                path.name for path in paths["bundled_scenario_asset_dir"].iterdir() if path.is_file()
+            }
+            seeded_asset_names = {
+                path.name for path in paths["scenario_asset_dir"].iterdir() if path.is_file()
+            }
+
+            self.assertTrue(bundled_scenario_names.issubset(seeded_scenario_names))
+            self.assertTrue(bundled_asset_names.issubset(seeded_asset_names))
+            self.assertEqual(existing_path.read_text(encoding="utf-8"), '{"scenario":"Custom Zarichne"}\n')
+
 
 if __name__ == "__main__":
     unittest.main()
