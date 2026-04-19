@@ -1,0 +1,23 @@
+services:
+  - type: web
+    name: jarvis-base-station
+    runtime: docker
+    plan: starter
+    region: oregon
+    dockerContext: ./base_station
+    dockerfilePath: ./base_station/Dockerfile
+    autoDeployTrigger: commit
+    healthCheckPath: /health
+    envVars:
+      - key: PORT
+        value: "10000"
+      - key: JARVIS_DATA_DIR
+        value: /data
+      - key: JARVIS_RELAY_ENABLED
+        value: "false"
+      - key: JARVIS_NETWORK_PROFILE
+        value: baseline
+    disk:
+      name: jarvis-data
+      mountPath: /data
+      sizeGB: 5

@@ -30,19 +30,19 @@ from fastapi.staticfiles import StaticFiles
 import uvicorn
 
 from core.ai_bridge import create_confirmation_text, process_audio_command, process_voice_command
+from core.runtime_paths import ensure_runtime_storage
 from core.swarm_logic import get_swarm
 from core.demo_soldier_controller import SoldierControllerNode, CommandPriority, CommandRoute
 from core.compute_drone_controller import ComputeDroneController, ThreatLevel, AttackDecision
 
 
 BASE_STATION_DIR = Path(__file__).resolve().parents[1]
-CONFIG_DIR = BASE_STATION_DIR / "config"
-DEFAULT_SCENARIO_FILE = CONFIG_DIR / "swarm_initial_state.json"
-SCENARIO_LIBRARY_DIR = CONFIG_DIR / "scenarios"
-SCENARIO_LIBRARY_DIR.mkdir(parents=True, exist_ok=True)
-SCENARIO_ASSET_DIR = BASE_STATION_DIR / "scenario_assets"
-SCENARIO_ASSET_DIR.mkdir(parents=True, exist_ok=True)
 load_dotenv(BASE_STATION_DIR / ".env")
+RUNTIME_PATHS = ensure_runtime_storage()
+CONFIG_DIR = RUNTIME_PATHS["config_dir"]
+DEFAULT_SCENARIO_FILE = RUNTIME_PATHS["default_scenario_file"]
+SCENARIO_LIBRARY_DIR = RUNTIME_PATHS["scenario_library_dir"]
+SCENARIO_ASSET_DIR = RUNTIME_PATHS["scenario_asset_dir"]
 
 
 app = FastAPI(
@@ -1807,7 +1807,7 @@ async def upload_map_overlay(file: UploadFile = File(...)):
     swarm = get_swarm()
     current_overlay = (swarm.get_state().get("map_overlay") or {})
     overlay = {
-        "asset_path": f"scenario_assets/{filename}",
+        "asset_path": str(output_path),
         "asset_url": f"/scenario-assets/{filename}",
         "opacity": current_overlay.get("opacity", 0.72),
         "visible": True,
