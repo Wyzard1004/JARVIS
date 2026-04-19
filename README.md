@@ -4,6 +4,8 @@
 
 **Live Frontend:** [jarvis-command-center-pearl.vercel.app](https://jarvis-command-center-pearl.vercel.app/)
 
+**Demo Video:** [YouTube walkthrough](https://youtu.be/OGTVvvW-5Rc)
+
 This repository is the current hackathon implementation of JARVIS. The live codebase combines:
 
 - a FastAPI base station that normalizes commands and runs swarm coordination
