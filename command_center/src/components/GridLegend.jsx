@@ -9,18 +9,17 @@
 import React from 'react'
 
 const DRONE_TYPES = [
-  { type: 'soldier', label: 'Soldier Operator', color: '#9B59B6', symbol: 'square', range: '5 cells' },
-  { type: 'compute', label: 'Compute Drone', color: '#4A90E2', symbol: 'diamond', range: '12 cells' },
-  { type: 'recon', label: 'Recon Drone', color: '#FF6B6B', symbol: 'triangle', range: '3 cells' },
-  { type: 'attack', label: 'Attack Drone', color: '#FF0000', symbol: 'star', range: '3 cells' }
+  { type: 'soldier', label: 'Soldier Operator', color: '#7B68EE', symbol: 'square', range: '190u / 1.5 sectors' },
+  { type: 'compute', label: 'Compute Drone', color: '#4169E1', symbol: 'diamond', range: '420u / 3.4 sectors' },
+  { type: 'recon', label: 'Recon Drone', color: '#87CEEB', symbol: 'triangle', range: '140u / 1.1 sectors' },
+  { type: 'attack', label: 'Attack Drone', color: '#00BFFF', symbol: 'star', range: '140u / 1.1 sectors' }
 ]
 
 const ENTITY_TYPES = [
-  { name: 'Tank', color: '#FF0000', shape: 'square' },
-  { name: 'Infantry', color: '#FF6B6B', shape: 'circle' },
-  { name: 'Building', color: '#8B7355', shape: 'square' },
-  { name: 'Warehouse', color: '#7A6B5A', shape: 'square' },
-  { name: 'Downed Plane', color: '#FFD93D', shape: 'triangle' },
+  { name: 'Enemy Tank', color: '#FF4500', shape: 'square' },
+  { name: 'Enemy Infantry', color: '#FF6B6B', shape: 'circle' },
+  { name: 'Building/Structure', color: '#8B7355', shape: 'square' },
+  { name: 'Downed Aircraft', color: '#FFD93D', shape: 'triangle' },
   { name: 'Bridge', color: '#666666', shape: 'circle' }
 ]
 

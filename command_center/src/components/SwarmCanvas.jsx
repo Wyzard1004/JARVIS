@@ -1,8 +1,8 @@
 /**
  * SwarmCanvas Component (Urban Combat Edition - Phase 4)
  * 
- * Renders a 6x6 NATO grid for urban combat scenarios with:
- * - Smaller 6x6 grid (Alpha-Foxtrot, 1-6) with larger cells
+ * Renders an 8x8 NATO grid for urban combat scenarios with:
+ * - 8x8 grid (Alpha-Hotel, 1-8) with 125 coordinate units per cell
  * - Dynamic drone circles (7px radius)
  * - Symbolic shapes within circles (drone type indicators)
  * - Dynamic transmission lines with proper line-of-sight blocking
@@ -17,13 +17,13 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { stateToEntities, getLoSBlockingEntities } from '../lib/entities'
 
-// 6x6 URBAN COMBAT GRID (Alpha-Foxtrot, 1-6)
-const CELL_SIZE = 100 // 100px per grid cell (larger for movement room)
-const GRID_SIZE = 6 // 6x6 (A-F, 1-6)
+// 8x8 URBAN COMBAT GRID (Alpha-Halo, 1-8) - 125 units per cell
+const CELL_SIZE = 75 // 75px per grid cell (600px / 8 cells)
+const GRID_SIZE = 8 // 8x8 (A-H, 1-8) - clean 125 coordinate units per cell
 const CANVAS_WIDTH = GRID_SIZE * CELL_SIZE // 600px
 const CANVAS_HEIGHT = GRID_SIZE * CELL_SIZE // 600px
 
-const NATO_PHONETIC_SHORT = ['Alpha', 'Bravo', 'Charlie', 'Delta', 'Echo', 'Foxtrot']
+const NATO_PHONETIC_SHORT = ['Alpha', 'Bravo', 'Charlie', 'Delta', 'Echo', 'Foxtrot', 'Golf', 'Hotel']
 
 // Drone type symbols (shapes inside circles)
 const DRONE_SYMBOLS = {
@@ -31,14 +31,6 @@ const DRONE_SYMBOLS = {
   compute: 'diamond',     // computational processing
   recon: 'triangle',      // scout/reconnaissance 
   attack: 'star',         // offensive capability
-}
-
-// Drone colors (darker for dark theme)
-const DRONE_COLORS = {
-  soldier: '#9B59B6',     // Purple
-  compute: '#4A90E2',     // Blue
-  recon: '#FF6B6B',       // Red
-  attack: '#FF0000',      // Bright Red
 }
 
 // Entity colors (hidden until revealed)
@@ -258,7 +250,7 @@ function SwarmCanvas({ state = {}, selectedDrone = null, onDroneClick = () => {}
     for (const drone of drones) {
       const [x, y] = coordsToPixel(drone.position[0], drone.position[1])
       const radius = 7
-      const color = DRONE_COLORS[drone.droneType] || '#999999'
+      const color = drone.color || '#999999'
       ctx.fillStyle = color
       ctx.globalAlpha = 0.9
       ctx.beginPath()
@@ -337,7 +329,7 @@ function SwarmCanvas({ state = {}, selectedDrone = null, onDroneClick = () => {}
         cancelAnimationFrame(animationFrameRef.current)
       }
     }
-  }, [drones, enemies, structures, transmissionGraph, hoveredDrone, selectedDrone, revealedEnemies])
+  }, [entities, drones, transmissionGraph, hoveredDrone, selectedDrone, revealedEnemies])
 
   // Mouse move handler
   const handleMouseMove = (e) => {
@@ -368,24 +360,28 @@ function SwarmCanvas({ state = {}, selectedDrone = null, onDroneClick = () => {}
     const canvas = canvasRef.current
     if (!canvas) return
     const rect = canvas.getBoundingClientRect()
-    const x = e.clientX - rect.left
-    const y = e.clientY - rect.top
+    const pixelX = e.clientX - rect.left
+    const pixelY = e.clientY - rect.top
+    
+    // Convert pixel coordinates to entity space (1000×1000)
+    const coordX = pixelX / 0.6
+    const coordY = pixelY / 0.6
+    
+    // Check for drone clicks
     for (const drone of drones) {
-      const [dx, dy] = gridToPixel(drone.grid_position[0], drone.grid_position[1])
-      const distance = Math.sqrt(Math.pow(x - dx, 2) + Math.pow(y - dy, 2))
-      if (distance < 10) {
+      const distance = drone.distanceTo([coordX, coordY])
+      if (distance < 50) { // ~3 grid cells in old terms
         onDroneClick(drone.id)
         return
       }
     }
+    
+    // Check for enemy clicks
+    const enemies = entities.filter(e => e.type === 'enemy')
     for (const enemy of enemies) {
       if (revealedEnemies.has(enemy.id)) continue
-      const [ex, ey] = gridToPixel(
-        Math.floor(enemy.grid_position[0] / 4.33),
-        Math.floor(enemy.grid_position[1] / 4.33)
-      )
-      const distance = Math.sqrt(Math.pow(x - ex, 2) + Math.pow(y - ey, 2))
-      if (distance < 10) {
+      const distance = enemy.distanceTo([coordX, coordY])
+      if (distance < 50) { // ~3 grid cells
         setRevealedEnemies(new Set([...revealedEnemies, enemy.id]))
         return
       }

@@ -1,13 +1,5 @@
 """
-Gossip Protocol Module - Phase 3 Message Propagation System
-
-Implements gossip-based message dissemination with:
-- Spanning tree computation (Prim's algorithm)
-- ACK/retry logic with exponential backoff
-- Multi-hop message routing
-- Event publishing for mission timeline
-
-All gossip-related operations are decoupled here for clarity and testability.
+Gossip Protocol Module - continuous-space message propagation helpers.
 """
 
 from __future__ import annotations
@@ -16,7 +8,7 @@ import heapq
 from datetime import datetime
 from typing import Dict, List, Optional, Set, Tuple
 
-from .grid_coordinate_system import GridCoordinateSystem
+from .continuous_coordinate_space import ContinuousCoordinateSpace
 from .mission_event_bus import EventBus
 
 
@@ -25,7 +17,7 @@ class GossipProtocol:
     Gossip message propagation system with spanning tree routing.
     
     Attributes:
-        grid_system: GridCoordinateSystem for coordinate operations
+        coordinate_space: ContinuousCoordinateSpace for coordinate operations
         event_bus: EventBus for mission event publishing
     """
     
@@ -33,15 +25,15 @@ class GossipProtocol:
     DEFAULT_RETRY_LIMIT = 2
     DEFAULT_RETRY_BACKOFF_MS = 150.0
     
-    def __init__(self, grid_system: GridCoordinateSystem, event_bus: EventBus):
+    def __init__(self, coordinate_space: ContinuousCoordinateSpace, event_bus: EventBus):
         """
         Initialize gossip protocol handler.
         
         Args:
-            grid_system: GridCoordinateSystem instance
+            coordinate_space: ContinuousCoordinateSpace instance
             event_bus: EventBus instance for event publishing
         """
-        self.grid_system = grid_system
+        self.coordinate_space = coordinate_space
         self.event_bus = event_bus
         
         # Message tracking
@@ -63,8 +55,8 @@ class GossipProtocol:
         Compute spanning tree for gossip propagation using Prim's algorithm.
         
         Args:
-            drone_positions: Dict mapping drone_id -> (row_idx, col_idx)
-            transmission_ranges: Dict mapping drone_id -> range_in_cells
+            drone_positions: Dict mapping drone_id -> (x, y)
+            transmission_ranges: Dict mapping drone_id -> range_in_units
             root_node: Root of spanning tree (auto-select if None)
             
         Returns:
@@ -137,8 +129,8 @@ class GossipProtocol:
         Build transmission graph respecting range constraints.
         
         Args:
-            drone_positions: Dict mapping drone_id -> (row_idx, col_idx)
-            transmission_ranges: Dict mapping drone_id -> range_in_cells
+            drone_positions: Dict mapping drone_id -> (x, y)
+            transmission_ranges: Dict mapping drone_id -> range_in_units
             
         Returns:
             List of edge dicts with source, target, distance, quality, in_spanning_tree
@@ -152,7 +144,7 @@ class GossipProtocol:
 
             for target_id in drone_ids[i + 1:]:
                 target_pos = drone_positions[target_id]
-                distance = self.grid_system.distance_in_cells(source_pos, target_pos)
+                distance = self.coordinate_space.distance(source_pos, target_pos)
                 target_range = transmission_ranges.get(target_id, 3)
                 
                 if distance <= source_range and distance <= target_range:

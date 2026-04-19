@@ -1,159 +1,170 @@
 {
   "scenario": "Village Reconnaissance Patrol",
   "timestamp_ms": 0,
-  "grid_size": 26,
   "drones": [
     {
       "id": "soldier-1",
       "label": "Soldier Operator 1",
       "type": "soldier",
       "role": "operator-node",
-      "grid_position": [1, 1],
       "behavior": "lurk",
-      "transmission_range": 5,
+      "transmission_range": 190,
       "health": 1.0,
       "fuel": 100,
       "render": {
-        "color": "#9B59B6",
+        "color": "#7B68EE",
         "radius": 14
-      }
+      },
+      "position": [57.69, 57.69]
     },
     {
       "id": "soldier-2",
       "label": "Soldier Operator 2",
       "type": "soldier",
       "role": "operator-node",
-      "grid_position": [4, 4],
       "behavior": "lurk",
-      "transmission_range": 5,
+      "transmission_range": 190,
       "health": 1.0,
       "fuel": 100,
       "render": {
-        "color": "#9B59B6",
+        "color": "#7B68EE",
         "radius": 14
-      }
+      },
+      "position": [173.08, 173.08]
     },
     {
       "id": "compute-1",
       "label": "Compute Drone 1",
       "type": "compute",
       "role": "compute-drone",
-      "grid_position": [13, 13],
       "behavior": "lurk",
-      "transmission_range": 12,
+      "transmission_range": 420,
       "health": 1.0,
       "fuel": 100,
       "render": {
-        "color": "#4A90E2",
+        "color": "#4169E1",
         "radius": 16
-      }
+      },
+      "position": [519.23, 519.23]
     },
     {
       "id": "compute-2",
       "label": "Compute Drone 2",
       "type": "compute",
       "role": "compute-drone",
-      "grid_position": [13, 12],
       "behavior": "lurk",
-      "transmission_range": 12,
+      "transmission_range": 420,
       "health": 1.0,
       "fuel": 95,
       "render": {
-        "color": "#4A90E2",
+        "color": "#4169E1",
         "radius": 16
-      }
+      },
+      "position": [480.77, 519.23]
     },
     {
       "id": "recon-1",
       "label": "Recon Drone 1",
       "type": "recon",
       "role": "recon-drone",
-      "grid_position": [5, 5],
       "behavior": "patrol",
-      "waypoints": [[5, 5], [5, 15], [15, 15], [15, 5], [5, 5]],
-      "transmission_range": 3,
+      "waypoints": [
+        [211.54, 211.54],
+        [596.15, 211.54],
+        [596.15, 596.15],
+        [211.54, 596.15],
+        [211.54, 211.54]
+      ],
+      "transmission_range": 140,
       "health": 0.95,
       "fuel": 85,
       "render": {
-        "color": "#FF6B6B",
+        "color": "#87CEEB",
         "radius": 12
-      }
+      },
+      "position": [211.54, 211.54]
     },
     {
       "id": "recon-2",
       "label": "Recon Drone 2",
       "type": "recon",
       "role": "recon-drone",
-      "grid_position": [20, 5],
       "behavior": "patrol",
-      "waypoints": [[20, 5], [20, 20], [10, 20], [10, 5], [20, 5]],
-      "transmission_range": 3,
+      "waypoints": [
+        [211.54, 788.46],
+        [788.46, 788.46],
+        [788.46, 403.85],
+        [211.54, 403.85],
+        [211.54, 788.46]
+      ],
+      "transmission_range": 140,
       "health": 0.92,
       "fuel": 78,
       "render": {
-        "color": "#FF6B6B",
+        "color": "#87CEEB",
         "radius": 12
-      }
+      },
+      "position": [211.54, 788.46]
     },
     {
       "id": "recon-3",
       "label": "Recon Drone 3",
       "type": "recon",
       "role": "recon-drone",
-      "grid_position": [8, 20],
       "behavior": "lurk",
-      "transmission_range": 3,
+      "transmission_range": 140,
       "health": 0.88,
       "fuel": 72,
       "render": {
-        "color": "#FF6B6B",
+        "color": "#87CEEB",
         "radius": 12
-      }
+      },
+      "position": [788.46, 326.92]
     },
     {
       "id": "attack-1",
       "label": "Attack Drone 1",
       "type": "attack",
       "role": "attack-drone",
-      "grid_position": [2, 25],
       "behavior": "lurk",
-      "transmission_range": 3,
+      "transmission_range": 140,
       "health": 0.98,
       "fuel": 90,
       "render": {
-        "color": "#FF0000",
+        "color": "#00BFFF",
         "radius": 13
-      }
+      },
+      "position": [980.77, 96.15]
     },
     {
       "id": "attack-2",
       "label": "Attack Drone 2",
       "type": "attack",
       "role": "attack-drone",
-      "grid_position": [25, 25],
       "behavior": "lurk",
-      "transmission_range": 3,
+      "transmission_range": 140,
       "health": 0.95,
       "fuel": 88,
       "render": {
-        "color": "#FF0000",
+        "color": "#00BFFF",
         "radius": 13
-      }
+      },
+      "position": [980.77, 980.77]
     },
     {
       "id": "attack-3",
       "label": "Attack Drone 3",
       "type": "attack",
       "role": "attack-drone",
-      "grid_position": [25, 2],
       "behavior": "lurk",
-      "transmission_range": 3,
+      "transmission_range": 140,
       "health": 0.92,
       "fuel": 82,
       "render": {
-        "color": "#FF0000",
+        "color": "#00BFFF",
         "radius": 13
-      }
+      },
+      "position": [96.15, 980.77]
     }
   ],
   "enemies": [
@@ -161,35 +172,34 @@
       "id": "enemy-tank-1",
       "label": "Enemy Tank 1",
       "subtype": "tank",
-      "grid_position": [8, 12],
       "status": "active",
       "threat_level": "critical",
       "render": {
         "shape": "square",
         "size": 18,
-        "color": "#FF0000",
+        "color": "#FF4500",
         "opacity": 1.0
-      }
+      },
+      "position": [480.77, 326.92]
     },
     {
       "id": "enemy-tank-2",
       "label": "Enemy Tank 2",
       "subtype": "tank",
-      "grid_position": [18, 20],
       "status": "active",
       "threat_level": "critical",
       "render": {
         "shape": "square",
         "size": 18,
-        "color": "#FF0000",
+        "color": "#FF4500",
         "opacity": 1.0
-      }
+      },
+      "position": [788.46, 711.54]
     },
     {
       "id": "enemy-infantry-1",
       "label": "Enemy Infantry Squad",
       "subtype": "infantry",
-      "grid_position": [10, 15],
       "status": "active",
       "threat_level": "high",
       "render": {
@@ -197,13 +207,13 @@
         "size": 12,
         "color": "#FF6B6B",
         "opacity": 1.0
-      }
+      },
+      "position": [596.15, 403.85]
     },
     {
       "id": "enemy-infantry-2",
       "label": "Enemy Infantry Patrol",
       "subtype": "infantry",
-      "grid_position": [22, 8],
       "status": "active",
       "threat_level": "medium",
       "render": {
@@ -211,7 +221,8 @@
         "size": 12,
         "color": "#FF6B6B",
         "opacity": 1.0
-      }
+      },
+      "position": [326.92, 865.38]
     }
   ],
   "structures": [
@@ -219,46 +230,45 @@
       "id": "structure-building-1",
       "label": "Building 1",
       "subtype": "building",
-      "grid_position": [3, 8],
       "status": "intact",
       "render": {
         "shape": "square",
         "size": 16,
         "color": "#8B7355",
         "opacity": 0.8
-      }
+      },
+      "position": [326.92, 134.62]
     },
     {
       "id": "structure-building-2",
       "label": "Building 2",
       "subtype": "building",
-      "grid_position": [12, 20],
       "status": "intact",
       "render": {
         "shape": "square",
         "size": 16,
         "color": "#8B7355",
         "opacity": 0.8
-      }
+      },
+      "position": [788.46, 480.77]
     },
     {
       "id": "structure-building-3",
       "label": "Damaged Building",
       "subtype": "building",
-      "grid_position": [20, 12],
       "status": "damaged",
       "render": {
         "shape": "square",
         "size": 16,
         "color": "#A0826D",
         "opacity": 0.6
-      }
+      },
+      "position": [480.77, 788.46]
     },
     {
       "id": "structure-downed-plane-1",
       "label": "Downed Allied Plane",
       "subtype": "downed-plane",
-      "grid_position": [6, 22],
       "status": "intact",
       "priority": "rescue",
       "render": {
@@ -266,58 +276,59 @@
         "size": 18,
         "color": "#FFD93D",
         "opacity": 1.0
-      }
+      },
+      "position": [865.38, 250.0]
     },
     {
       "id": "structure-warehouse-1",
       "label": "Warehouse",
       "subtype": "warehouse",
-      "grid_position": [15, 3],
       "status": "intact",
       "render": {
         "shape": "square",
         "size": 17,
         "color": "#7A6B5A",
         "opacity": 0.75
-      }
+      },
+      "position": [134.62, 596.15]
     },
     {
       "id": "structure-bridge-1",
       "label": "Bridge",
       "subtype": "bridge",
-      "grid_position": [18, 13],
       "status": "intact",
       "render": {
         "shape": "circle",
         "size": 14,
         "color": "#666666",
         "opacity": 0.7
-      }
+      },
+      "position": [519.23, 711.54]
     }
   ],
-  "transmission_graph": [
-  ],
+  "transmission_graph": [],
   "initial_events": [
     {
       "timestamp_ms": 0,
       "event_type": "drone_spawned",
       "drone_id": "soldier-1",
-      "grid_position": [1, 1],
-      "message": "soldier-1 spawned at Alpha-2"
+      "message": "soldier-1 spawned at Alpha-2",
+      "position": [57.69, 57.69]
     },
     {
       "timestamp_ms": 100,
       "event_type": "drone_spawned",
       "drone_id": "compute-1",
-      "grid_position": [13, 13],
-      "message": "compute-1 spawned at Mike-14"
+      "message": "compute-1 spawned at Mike-14",
+      "position": [519.23, 519.23]
     },
     {
       "timestamp_ms": 200,
       "event_type": "patrol_started",
       "drone_id": "recon-1",
-      "grid_position": [5, 5],
-      "message": "recon-1 began patrol (4 waypoints)"
+      "message": "recon-1 began patrol (4 waypoints)",
+      "position": [211.54, 211.54]
     }
-  ]
+  ],
+  "coordinate_space_size": 1000
 }

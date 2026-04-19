@@ -206,6 +206,8 @@ def _get_drone_type(node_id: str) -> str:
     """Map node ID to drone type for visualization."""
     if node_id == "gateway":
         return "gateway"
+    elif node_id.startswith("compute"):
+        return "compute"
     elif node_id.startswith("soldier"):
         return "soldier"
     elif node_id.startswith("recon"):
@@ -328,7 +330,6 @@ def _simulate_signal_animations(propagation_order: list, edges: list) -> list:
 
 def _build_lean_ui_event(consensus_result: Dict, transcribed_text: str, parsed_command: Dict | None, confirmation_text: str | None) -> Dict:
     """Build a lean response for WebSocket broadcast to React UI (minimal payload)."""
-    search_state = consensus_result.get("search_state", {})
     active_nodes = _build_active_nodes(consensus_result)
     
     # Extract only essential node/edge info for visualization
@@ -336,16 +337,32 @@ def _build_lean_ui_event(consensus_result: Dict, transcribed_text: str, parsed_c
     lean_nodes = [
         {
             "id": n.get("id"),
+            "label": n.get("label"),
+            "type": n.get("type") or _get_drone_type(n.get("id", "")),
+            "role": n.get("role"),
             "status": n.get("status"),
-            "drone_type": _get_drone_type(n.get("id")),
-            "x": n.get("x", 0),
-            "y": n.get("y", 0)
+            "behavior": n.get("behavior"),
+            "position": n.get("position"),
+            "next_waypoint": n.get("next_waypoint"),
+            "transmission_range": n.get("transmission_range"),
+            "health": n.get("health"),
+            "fuel": n.get("fuel"),
+            "render": n.get("render"),
         }
         for n in nodes
     ]
     
     edges = consensus_result.get("edges", [])
-    lean_edges = [{"source": e.get("source"), "target": e.get("target")} for e in edges]
+    lean_edges = [
+        {
+            "source": e.get("source"),
+            "target": e.get("target"),
+            "quality": e.get("quality"),
+            "distance": e.get("distance"),
+            "in_spanning_tree": e.get("in_spanning_tree", False),
+        }
+        for e in edges
+    ]
     
     # Simplify propagation order (just node id, timestamp, hop)
     prop_order = consensus_result.get("propagation_order", [])
@@ -377,6 +394,8 @@ def _build_lean_ui_event(consensus_result: Dict, transcribed_text: str, parsed_c
         "recon_status": sim_data.get("recon_status", {}),
         "operator_signals": sim_data.get("operator_signals", []),
         "signal_animations": signal_animations,
+        "structures": consensus_result.get("structures", []),
+        "events": consensus_result.get("events", []),
         "timestamp": datetime.now().isoformat(),
     }
 
@@ -501,6 +520,9 @@ async def websocket_swarm_endpoint(websocket: WebSocket):
             "drone_positions": initial_state.get("drone_positions", {}),
             "drone_behaviors": initial_state.get("drone_behaviors", {}),
             "active_gossip_messages": initial_state.get("active_gossip_messages", []),
+            "enemies": initial_state.get("enemies", []),
+            "structures": initial_state.get("structures", []),
+            "events": initial_state.get("events", []),
             "timestamp": datetime.now().isoformat()
         }
         await websocket.send_json(initial_message)
@@ -523,6 +545,9 @@ async def websocket_swarm_endpoint(websocket: WebSocket):
                         "drone_positions": current_state.get("drone_positions", {}),
                         "drone_behaviors": current_state.get("drone_behaviors", {}),
                         "active_gossip_messages": current_state.get("active_gossip_messages", []),
+                        "enemies": current_state.get("enemies", []),
+                        "structures": current_state.get("structures", []),
+                        "events": current_state.get("events", []),
                         "timestamp": datetime.now().isoformat()
                     }
                     

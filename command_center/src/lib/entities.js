@@ -105,11 +105,11 @@ export class Entity {
   }
 
   /**
-   * Get display position scaled to 6×6 grid from 1000×1000 coordinates
-   * Scale factor: 1000 / 6 ≈ 166.67 units per grid cell
+   * Get display position scaled to 8×8 grid from 1000×1000 coordinates
+   * Scale factor: 1000 / 8 = 125 units per grid cell
    */
   getScaledPosition() {
-    const SCALE = 1000 / 6
+    const SCALE = 1000 / 8
     return [
       Math.floor(this.position[0] / SCALE),
       Math.floor(this.position[1] / SCALE)
@@ -120,7 +120,7 @@ export class Entity {
 /**
  * Drone Entity (Allied)
  * Transmission ranges use Euclidean distance in 1000×1000 coordinate space
- * Scale: 1000/6 ≈ 166.67 units per grid cell
+ * Scale: 1000/8 = 125 units per grid cell (8×8 grid)
  */
 export class Drone extends Entity {
   constructor(id, droneType, position, options = {}) {
@@ -133,17 +133,17 @@ export class Drone extends Entity {
         attack: 'star'
       }[droneType] || 'circle',
       color: {
-        soldier: '#9B59B6',
-        compute: '#4A90E2',
-        recon: '#FF6B6B',
-        attack: '#FF0000'
+        soldier: '#7B68EE',    // Medium slate blue (cool)
+        compute: '#4169E1',    // Royal blue (cool)
+        recon: '#87CEEB',      // Sky blue (cool)
+        attack: '#00BFFF'      // Deep sky blue (cool)
       }[droneType] || '#999999',
       transmissionRange: {
-        soldier: 750,      // ~4.5 cells, Euclidean distance
-        compute: 1800,     // ~10.8 cells, long-range relay
-        recon: 500,        // ~3 cells, short range
-        attack: 500        // ~3 cells, short range
-      }[droneType] || 500,
+        soldier: 500,      // 4 cells (125 units/cell = 500), general range
+        compute: 1200,     // 9.6 cells, long-range relay
+        recon: 300,        // 2.4 cells, short range
+        attack: 250        // 2 cells, fast and aggressive, very short range
+      }[droneType] || 250,
       ...options
     })
     this.droneType = droneType
@@ -164,9 +164,9 @@ export class Enemy extends Entity {
         'enemy_helicopter': 'triangle'
       }[enemyType] || 'circle',
       color: {
-        'enemy_soldier': '#FF6B6B',
-        'enemy_tank': '#8B0000',
-        'enemy_helicopter': '#FF4500'
+        'enemy_soldier': '#FF6B6B',    // Light coral (warm)
+        'enemy_tank': '#FF4500',       // Orange red (warm)
+        'enemy_helicopter': '#FF8C00'  // Dark orange (warm)
       }[enemyType] || '#FF0000',
       revealed: options.revealed !== undefined ? options.revealed : false,
       ...options
@@ -243,46 +243,49 @@ export class PointOfInterest extends Entity {
  */
 export function stateToEntities(state) {
   const entities = []
-  
-  /**
-   * Convert from 26×26 grid coordinates to 1000×1000 continuous space
-   * Scale: 1000 / 26 ≈ 38.46 units per grid cell
-   * Add small random offset for exact positioning (not grid-locked)
-   */
-  const gridToCoords = (gridPos) => {
-    if (!gridPos || !Array.isArray(gridPos)) return [500, 500]
-    const SCALE = 1000 / 26
-    const offset = () => (Math.random() - 0.5) * SCALE * 0.5 // ±25% of cell size
+
+  const clampPosition = (position) => {
+    if (!Array.isArray(position) || position.length !== 2) return [500, 500]
     return [
-      gridPos[0] * SCALE + offset(),
-      gridPos[1] * SCALE + offset()
+      Math.max(0, Math.min(1000, Number(position[0]) || 0)),
+      Math.max(0, Math.min(1000, Number(position[1]) || 0))
     ]
+  }
+
+  const resolvePosition = (entity, fallbackPosition) => {
+    if (Array.isArray(entity?.position)) return clampPosition(entity.position)
+    if (Array.isArray(fallbackPosition)) return clampPosition(fallbackPosition)
+    return [500, 500]
   }
 
   // Add drones from Phase 4 format
   if (state.nodes && state.nodes.length > 0) {
     for (const node of state.nodes) {
-      const oldPos = state.drone_positions?.[node.id] || [3, 3]
-      const pos = gridToCoords(oldPos)
-      const droneType = node.role?.includes('compute') ? 'compute' :
+      const pos = resolvePosition(node, state.drone_positions?.[node.id])
+      const droneType = node.type || (
+                        node.role?.includes('compute') ? 'compute' :
                         node.role?.includes('soldier') ? 'soldier' :
                         node.id?.includes('recon') ? 'recon' :
-                        node.id?.includes('attack') ? 'attack' : 'soldier'
+                        node.id?.includes('attack') ? 'attack' : 'soldier')
 
       entities.push(new Drone(node.id, droneType, pos, {
         status: node.status || 'active',
-        behavior: state.drone_behaviors?.[node.id]?.current || 'lurk'
+        behavior: node.behavior || state.drone_behaviors?.[node.id]?.current || 'lurk',
+        transmissionRange: node.transmission_range
       }))
     }
   } else if (state.drones) {
-    // Legacy format
     for (const drone of state.drones) {
-      const pos = gridToCoords(drone.grid_position)
+      const pos = resolvePosition(drone)
       entities.push(new Drone(
         drone.id,
         drone.type,
         pos,
-        { status: drone.status, behavior: drone.behavior }
+        {
+          status: drone.status,
+          behavior: drone.behavior,
+          transmissionRange: drone.transmission_range
+        }
       ))
     }
   }
@@ -290,7 +293,7 @@ export function stateToEntities(state) {
   // Add enemies
   if (state.enemies) {
     for (const enemy of state.enemies) {
-      const pos = gridToCoords(enemy.grid_position)
+      const pos = resolvePosition(enemy)
       entities.push(new Enemy(
         enemy.id,
         enemy.subtype,
@@ -303,7 +306,7 @@ export function stateToEntities(state) {
   // Add structures
   if (state.structures) {
     for (const struct of state.structures) {
-      const pos = gridToCoords(struct.grid_position)
+      const pos = resolvePosition(struct)
       entities.push(new Structure(
         struct.id,
         struct.subtype,

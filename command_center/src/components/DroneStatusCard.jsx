@@ -2,7 +2,7 @@
  * DroneStatusCard Component
  * 
  * Displays detailed status for a selected drone:
- * - Current position and grid cell
+ * - Current position and 8x8 display sector
  * - Behavior (Lurk/Patrol/Transit)
  * - Health, fuel, and transmission status
  * - Next waypoint (if patrolling)
@@ -11,11 +11,7 @@
 import React from 'react'
 
 const NATO_PHONETIC = [
-  'Alpha', 'Bravo', 'Charlie', 'Delta', 'Echo', 'Foxtrot',
-  'Golf', 'Hotel', 'India', 'Juliet', 'Kilo', 'Lima',
-  'Mike', 'November', 'Oscar', 'Papa', 'Quebec', 'Romeo',
-  'Sierra', 'Tango', 'Uniform', 'Victor', 'Whiskey', 'X-ray',
-  'Yankee', 'Zulu'
+  'Alpha', 'Bravo', 'Charlie', 'Delta', 'Echo', 'Foxtrot', 'Golf', 'Hotel'
 ]
 
 const BEHAVIOR_ICONS = {
@@ -32,7 +28,7 @@ const BEHAVIOR_LABELS = {
   swarm: 'Swarming'
 }
 
-function DroneStatusCard({ drone, commsStatus = 'online' }) {
+function DroneStatusCard({ drone, commsStatus = 'online', batteryLevels = {} }) {
   if (!drone) {
     return (
       <div className="w-full p-4 bg-gray-700 border border-gray-600 rounded text-center text-gray-400">
@@ -41,28 +37,29 @@ function DroneStatusCard({ drone, commsStatus = 'online' }) {
     )
   }
 
-  // Format grid position with exact coordinates
-  const gridString = drone.grid_position
-    ? `${NATO_PHONETIC[drone.grid_position[0]]}-${drone.grid_position[1] + 1}`
+  // Get persistent battery level for this drone
+  const battery = batteryLevels[drone.id] || 75
+
+  const position = Array.isArray(drone.position) ? drone.position : null
+  const formatSector = (point) => {
+    if (!Array.isArray(point) || point.length !== 2) return 'Unknown'
+    const col = Math.max(0, Math.min(7, Math.floor(point[0] / 125)))
+    const row = Math.max(0, Math.min(7, Math.floor(point[1] / 125)))
+    return `${NATO_PHONETIC[row]}-${col + 1}`
+  }
+  const sectorString = formatSector(position)
+  const coordinateString = position
+    ? `${Math.round(position[0])}, ${Math.round(position[1])}`
     : 'Unknown'
-  
-  // Battery level (random for aesthetic)
-  const battery = Math.floor(Math.random() * 30) + 70
 
   // Comms status indicator
   const getCommsColor = () => {
     return commsStatus === 'online' ? 'text-green-400' : 'text-red-400'
   }
 
-  // Get transmission range based on drone type
   const getTransmissionRange = () => {
-    const rangeMap = {
-      soldier: '5 cells',
-      compute: '12 cells',
-      recon: '3 cells',
-      attack: '3 cells'
-    }
-    return rangeMap[drone.type] || 'Unknown'
+    if (typeof drone.transmission_range !== 'number') return 'Unknown'
+    return `${drone.transmission_range.toFixed(0)}u`
   }
 
   return (
@@ -76,7 +73,8 @@ function DroneStatusCard({ drone, commsStatus = 'online' }) {
       {/* Position */}
       <div>
         <div className="text-xs text-gray-400 font-bold">POSITION</div>
-        <div className="font-mono text-sm text-gray-200 mt-1">{gridString}</div>
+        <div className="font-mono text-sm text-gray-200 mt-1">{sectorString}</div>
+        <div className="text-xs text-gray-400 mt-1">World: {coordinateString}</div>
       </div>
 
       {/* Behavior */}
@@ -111,7 +109,7 @@ function DroneStatusCard({ drone, commsStatus = 'online' }) {
           ● {commsStatus.toUpperCase()}
         </div>
         <div className="text-xs text-gray-400 mt-1">
-          Range: {getTransmissionRange()}
+          Range: {getTransmissionRange()} ({typeof drone.transmission_range === 'number' ? `${(drone.transmission_range / 125).toFixed(1)} sectors` : 'n/a'})
         </div>
       </div>
 
@@ -120,7 +118,7 @@ function DroneStatusCard({ drone, commsStatus = 'online' }) {
         <div className="bg-gray-600 p-2 rounded border border-gray-500">
           <div className="text-xs text-gray-300 font-bold mb-1">NEXT WAYPOINT</div>
           <div className="font-mono text-sm text-gray-200">
-            {NATO_PHONETIC[drone.next_waypoint[0]]}-{drone.next_waypoint[1] + 1}
+            {formatSector(drone.next_waypoint)}
           </div>
         </div>
       )}

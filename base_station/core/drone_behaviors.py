@@ -1,20 +1,12 @@
 """
-Drone Behaviors Module - Grid-based Movement and Behavior Management
-
-Handles all drone-specific behaviors:
-- Position tracking and movement
-- Patrol and transit behavior
-- Waypoint navigation with smooth interpolation
-- Behavior state transitions
-
-Decoupled from SwarmCoordinator for clarity and testability.
+Drone Behaviors Module - continuous-space movement helpers.
 """
 
 from __future__ import annotations
 
 from typing import Dict, List, Optional, Tuple
 
-from .grid_coordinate_system import GridCoordinateSystem
+from .continuous_coordinate_space import ContinuousCoordinateSpace
 
 
 class DroneState:
@@ -23,25 +15,25 @@ class DroneState:
     def __init__(
         self,
         drone_id: str,
-        grid_position: Tuple[int, int],
+        position: Tuple[float, float],
         behavior: str = "lurk",
-        waypoints: Optional[List[Tuple[int, int]]] = None,
-        speed: float = 1.0,  # cells per second
+        waypoints: Optional[List[Tuple[float, float]]] = None,
+        speed: float = 45.0,
     ):
         """
         Initialize drone state.
         
         Args:
             drone_id: Unique identifier
-            grid_position: (row_idx, col_idx) in grid coordinates
+            position: (x, y) in continuous world coordinates
             behavior: "lurk", "patrol", "transit", or "swarm"
             waypoints: List of waypoints for patrol/transit
-            speed: Movement speed in cells per second
+            speed: Movement speed in world-space units per second
         """
         self.drone_id = drone_id
-        self.position = grid_position
+        self.position = position
         self.behavior = behavior
-        self.waypoints = waypoints or [grid_position]
+        self.waypoints = waypoints or [position]
         self.waypoint_index = 0
         self.speed = speed
         self.progress = 0.0  # 0.0-1.0 through current movement
@@ -62,14 +54,14 @@ class DroneState:
 class DroneMovement:
     """Manages drone movement and behavior transitions."""
     
-    def __init__(self, grid_system: GridCoordinateSystem):
+    def __init__(self, coordinate_space: ContinuousCoordinateSpace):
         """
         Initialize movement manager.
         
         Args:
-            grid_system: GridCoordinateSystem for coordinate operations
+            coordinate_space: ContinuousCoordinateSpace for coordinate operations
         """
-        self.grid_system = grid_system
+        self.coordinate_space = coordinate_space
     
     def update_positions(
         self,
@@ -123,10 +115,10 @@ class DroneMovement:
         current_pos = state.position
         next_waypoint = waypoints[waypoint_idx + 1]
 
-        # Distance in cells
-        distance = self.grid_system.distance_in_cells(current_pos, next_waypoint)
+        segment_start = waypoints[waypoint_idx]
+        distance = self.coordinate_space.distance(segment_start, next_waypoint)
 
-        # Time to traverse (at speed cells per second)
+        # Time to traverse in continuous world-space units
         travel_time_sec = distance / state.speed if state.speed > 0 else float('inf')
 
         if travel_time_sec <= 0:
@@ -144,11 +136,7 @@ class DroneMovement:
             state.waypoint_index += 1
             state.progress = 0.0
         else:
-            # Interpolate position
-            progress = new_progress
-            interp_row = current_pos[0] + (next_waypoint[0] - current_pos[0]) * progress
-            interp_col = current_pos[1] + (next_waypoint[1] - current_pos[1]) * progress
-            state.position = (int(round(interp_row)), int(round(interp_col)))
+            state.position = self.coordinate_space.interpolate(segment_start, next_waypoint, new_progress)
             state.progress = new_progress
 
     def set_behavior(
