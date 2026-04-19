@@ -6,7 +6,7 @@ import React from 'react'
  * Displays connection status, swarm health, and system diagnostics.
  */
 
-function StatusPanel({ connectionStatus, swarmState }) {
+function StatusPanel({ connectionStatus, swarmState, embedded = false }) {
   const statusColor = {
     connected: 'text-green-400',
     disconnected: 'text-red-400',
@@ -20,9 +20,9 @@ function StatusPanel({ connectionStatus, swarmState }) {
   const missionObjective = swarmState?.search_state?.objective
 
   return (
-    <div className="bg-gray-800 rounded border border-gray-700 p-4">
-      <h3 className="text-lg font-bold mb-4">System Status</h3>
-      
+    <div className={embedded ? '' : 'bg-gray-800 rounded border border-gray-700 p-4'}>
+      {!embedded && <h3 className="text-lg font-bold mb-4">System Status</h3>}
+
       <div className="space-y-3">
         {/* Connection Status */}
         <div>

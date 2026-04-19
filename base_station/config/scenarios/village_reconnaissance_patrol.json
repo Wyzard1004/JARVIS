@@ -1,5 +1,10 @@
 {
   "scenario": "Village Reconnaissance Patrol",
+  "suggested_commands": [
+    "jarvis scan the eastern village blocks",
+    "jarvis move to the downed aircraft",
+    "jarvis hold position near the checkpoint"
+  ],
   "timestamp_ms": 0,
   "coordinate_space_size": 1000,
   "map_overlay": {

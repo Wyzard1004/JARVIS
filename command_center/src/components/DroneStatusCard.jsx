@@ -29,7 +29,7 @@ const BEHAVIOR_LABELS = {
   swarm: 'Swarming'
 }
 
-function DroneStatusCard({ drone, commsStatus = 'online' }) {
+function DroneStatusCard({ drone, commsStatus = 'online', embedded = false }) {
   if (!drone) {
     return (
       <div className="w-full p-4 bg-gray-700 border border-gray-600 rounded text-center text-gray-400">
@@ -68,7 +68,7 @@ function DroneStatusCard({ drone, commsStatus = 'online' }) {
   }
 
   return (
-    <div className="w-full p-4 bg-gray-700 border border-gray-600 rounded space-y-3">
+    <div className={embedded ? 'w-full space-y-3' : 'w-full p-4 bg-gray-700 border border-gray-600 rounded space-y-3'}>
       {/* Header with drone name and type */}
       <div className="border-b border-gray-600 pb-3">
         <h3 className="font-bold text-lg text-gray-100">{displayName}</h3>

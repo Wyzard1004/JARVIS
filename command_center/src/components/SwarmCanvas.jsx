@@ -24,10 +24,11 @@ const CANVAS_WIDTH = GRID_SIZE * CELL_SIZE
 const CANVAS_HEIGHT = GRID_SIZE * CELL_SIZE
 const WORLD_SIZE = 1000
 const PIXEL_SCALE = CANVAS_WIDTH / WORLD_SIZE
-const NATO_PHONETIC_SHORT = ['Alpha', 'Bravo', 'Charlie', 'Delta', 'Echo', 'Foxtrot', 'Golf', 'Hotel']
+const GRID_EDGE_LETTERS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H']
 const DEFAULT_SYMBOL_ASPECT_RATIO = 612 / 792
 const LABEL_MAX_TEXT_WIDTH = 108
 const CANVAS_MARGIN = 6
+const EDGE_LABEL_GUTTER = 24
 const COMMUNICATION_EDGE_FADE_MS = 3000
 const imageCache = new Map()
 
@@ -358,7 +359,26 @@ function SwarmCanvas({
       : entity.symbolUrl
   )
 
+  const isGreyedDestroyedDrone = (entity) => (
+    entity?.type === 'drone' &&
+    entity?.droneType === 'attack' &&
+    entity?.status === 'destroyed'
+  )
+
+  const getEntityVisualStyle = (entity, fallbackOptions = {}) => {
+    const greyedOut = isGreyedDestroyedDrone(entity)
+    return {
+      fillStyle: greyedOut ? '#94A3B8' : (entity.color || fallbackOptions.fillStyle || '#94A3B8'),
+      strokeStyle: greyedOut ? 'rgba(148, 163, 184, 0.95)' : fallbackOptions.strokeStyle,
+      opacity: greyedOut
+        ? Math.min(0.58, entity.opacity ?? fallbackOptions.opacity ?? 1)
+        : (entity.opacity ?? fallbackOptions.opacity ?? 1),
+      filter: greyedOut ? 'grayscale(1)' : 'none'
+    }
+  }
+
   const drawNatoMarker = (ctx, entity, x, y, fallbackOptions = {}) => {
+    const visualStyle = getEntityVisualStyle(entity, fallbackOptions)
     const markerUrl = getEntityMarkerUrl(entity)
     if (markerUrl) {
       const image = getCachedImage(markerUrl)
@@ -371,7 +391,8 @@ function SwarmCanvas({
           mode: 'nato'
         }
         ctx.save()
-        ctx.globalAlpha = entity.opacity ?? fallbackOptions.opacity ?? 1
+        ctx.globalAlpha = visualStyle.opacity
+        ctx.filter = visualStyle.filter
         ctx.drawImage(
           image,
           x - metrics.width / 2,
@@ -385,7 +406,12 @@ function SwarmCanvas({
     }
 
     const fallbackSize = entity.renderSize || 12
-    drawEntityShape(ctx, x, y, entity.shape, fallbackSize, fallbackOptions)
+    drawEntityShape(ctx, x, y, entity.shape, fallbackSize, {
+      ...fallbackOptions,
+      fillStyle: visualStyle.fillStyle,
+      strokeStyle: visualStyle.strokeStyle,
+      opacity: visualStyle.opacity
+    })
     return {
       width: fallbackSize,
       height: fallbackSize,
@@ -397,8 +423,9 @@ function SwarmCanvas({
   const drawAtakMarker = (ctx, entity, x, y, fallbackOptions = {}) => {
     const markerSize = entity.renderSize || 12
     const radius = Math.max(12, Math.min(20, markerSize * 0.95))
-    const badgeColor = entity.color || fallbackOptions.fillStyle || '#94A3B8'
-    const markerOpacity = entity.opacity ?? fallbackOptions.opacity ?? 1
+    const visualStyle = getEntityVisualStyle(entity, fallbackOptions)
+    const badgeColor = visualStyle.fillStyle
+    const markerOpacity = visualStyle.opacity
 
     if (entity.atakBadge !== false) {
       ctx.save()
@@ -431,6 +458,7 @@ function SwarmCanvas({
         ctx.arc(x, y, radius - 1.2, 0, Math.PI * 2)
         ctx.clip()
         ctx.globalAlpha = markerOpacity
+        ctx.filter = visualStyle.filter
         ctx.drawImage(
           image,
           x - innerWidth / 2,
@@ -442,8 +470,8 @@ function SwarmCanvas({
       }
     } else {
       drawEntityShape(ctx, x, y, entity.shape, radius * 0.95, {
-        fillStyle: '#F8FAFC',
-        strokeStyle: 'rgba(15, 23, 42, 0.65)',
+        fillStyle: badgeColor,
+        strokeStyle: visualStyle.strokeStyle || 'rgba(15, 23, 42, 0.65)',
         lineWidth: 1.1,
         opacity: Math.min(1, markerOpacity)
       })
@@ -616,28 +644,6 @@ function SwarmCanvas({
       ctx.moveTo(0, y)
       ctx.lineTo(CANVAS_WIDTH, y)
       ctx.stroke()
-    }
-  }
-
-  const drawGridLabels = (ctx) => {
-    ctx.font = 'bold 12px monospace'
-    ctx.fillStyle = '#666666'
-    ctx.textAlign = 'center'
-    ctx.textBaseline = 'middle'
-
-    for (let row = 0; row < GRID_SIZE; row += 1) {
-      const y = row * CELL_SIZE + CELL_SIZE / 2
-      const label = NATO_PHONETIC_SHORT[row].substring(0, 3)
-      ctx.save()
-      ctx.translate(-18, y)
-      ctx.rotate(-Math.PI / 2)
-      ctx.fillText(label, 0, 0)
-      ctx.restore()
-    }
-
-    for (let col = 0; col < GRID_SIZE; col += 1) {
-      const x = col * CELL_SIZE + CELL_SIZE / 2
-      ctx.fillText(col + 1, x, -8)
     }
   }
 
@@ -858,7 +864,6 @@ function SwarmCanvas({
     drawGridBase(ctx)
     drawMapOverlay(ctx)
     drawGrid(ctx)
-    drawGridLabels(ctx)
     drawStructures(ctx, labelEntries)
     drawReconVisibility(ctx)
     drawTransmissionLines(ctx)
@@ -1258,37 +1263,151 @@ function SwarmCanvas({
     return 'default'
   })()
 
+  const edgeLabelStyle = {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    minWidth: 18,
+    minHeight: 18,
+    padding: '0 4px',
+    borderRadius: 5,
+    border: '1px solid rgba(148, 163, 184, 0.4)',
+    backgroundColor: 'rgba(15, 23, 42, 0.88)',
+    color: '#CBD5E1',
+    fontSize: '11px',
+    fontWeight: 700,
+    fontFamily: 'monospace',
+    lineHeight: 1
+  }
+
   return (
     <div
-      ref={canvasContainerRef}
       style={{
         width: '100%',
-        aspectRatio: '1 / 1'
+        boxSizing: 'border-box',
+        padding: `${EDGE_LABEL_GUTTER}px`
       }}
     >
-      <canvas
-        ref={canvasRef}
-        width={canvasSize.backingWidth}
-        height={canvasSize.backingHeight}
-        onPointerDown={(event) => {
-          void handlePointerDown(event)
-        }}
-        onPointerMove={handlePointerMove}
-        onPointerUp={(event) => {
-          void handlePointerUp(event)
-        }}
-        onPointerLeave={handlePointerLeave}
+      <div
         style={{
-          border: '2px solid #4A4A4A',
-          backgroundColor: '#1A1A1A',
-          cursor,
-          boxSizing: 'border-box',
-          display: 'block',
+          position: 'relative',
           width: '100%',
-          height: '100%',
-          touchAction: 'none'
+          aspectRatio: '1 / 1',
+          overflow: 'visible'
         }}
-      />
+      >
+        <div
+          aria-hidden="true"
+          style={{
+            position: 'absolute',
+            top: `${-EDGE_LABEL_GUTTER}px`,
+            left: 0,
+            right: 0,
+            height: EDGE_LABEL_GUTTER,
+            display: 'grid',
+            gridTemplateColumns: `repeat(${GRID_SIZE}, minmax(0, 1fr))`,
+            alignItems: 'center',
+            justifyItems: 'center',
+            pointerEvents: 'none'
+          }}
+        >
+          {Array.from({ length: GRID_SIZE }, (_, index) => (
+            <span key={`grid-top-${index}`} style={edgeLabelStyle}>{index + 1}</span>
+          ))}
+        </div>
+
+        <div
+          aria-hidden="true"
+          style={{
+            position: 'absolute',
+            bottom: `${-EDGE_LABEL_GUTTER}px`,
+            left: 0,
+            right: 0,
+            height: EDGE_LABEL_GUTTER,
+            display: 'grid',
+            gridTemplateColumns: `repeat(${GRID_SIZE}, minmax(0, 1fr))`,
+            alignItems: 'center',
+            justifyItems: 'center',
+            pointerEvents: 'none'
+          }}
+        >
+          {Array.from({ length: GRID_SIZE }, (_, index) => (
+            <span key={`grid-bottom-${index}`} style={edgeLabelStyle}>{index + 1}</span>
+          ))}
+        </div>
+
+        <div
+          aria-hidden="true"
+          style={{
+            position: 'absolute',
+            top: 0,
+            bottom: 0,
+            left: `${-EDGE_LABEL_GUTTER}px`,
+            width: EDGE_LABEL_GUTTER,
+            display: 'grid',
+            gridTemplateRows: `repeat(${GRID_SIZE}, minmax(0, 1fr))`,
+            alignItems: 'center',
+            justifyItems: 'center',
+            pointerEvents: 'none'
+          }}
+        >
+          {GRID_EDGE_LETTERS.map((label) => (
+            <span key={`grid-left-${label}`} style={edgeLabelStyle}>{label}</span>
+          ))}
+        </div>
+
+        <div
+          aria-hidden="true"
+          style={{
+            position: 'absolute',
+            top: 0,
+            bottom: 0,
+            right: `${-EDGE_LABEL_GUTTER}px`,
+            width: EDGE_LABEL_GUTTER,
+            display: 'grid',
+            gridTemplateRows: `repeat(${GRID_SIZE}, minmax(0, 1fr))`,
+            alignItems: 'center',
+            justifyItems: 'center',
+            pointerEvents: 'none'
+          }}
+        >
+          {GRID_EDGE_LETTERS.map((label) => (
+            <span key={`grid-right-${label}`} style={edgeLabelStyle}>{label}</span>
+          ))}
+        </div>
+
+        <div
+          ref={canvasContainerRef}
+          style={{
+            position: 'absolute',
+            inset: 0
+          }}
+        >
+          <canvas
+            ref={canvasRef}
+            width={canvasSize.backingWidth}
+            height={canvasSize.backingHeight}
+            onPointerDown={(event) => {
+              void handlePointerDown(event)
+            }}
+            onPointerMove={handlePointerMove}
+            onPointerUp={(event) => {
+              void handlePointerUp(event)
+            }}
+            onPointerLeave={handlePointerLeave}
+            style={{
+              border: '2px solid #4A4A4A',
+              backgroundColor: '#1A1A1A',
+              cursor,
+              boxSizing: 'border-box',
+              display: 'block',
+              width: '100%',
+              height: '100%',
+              touchAction: 'none'
+            }}
+          />
+        </div>
+      </div>
     </div>
   )
 }

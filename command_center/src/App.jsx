@@ -11,6 +11,7 @@ import DroneStatusCard from './components/DroneStatusCard'
 import PushToTalkButton from './components/PushToTalkButton'
 import StatusPanel from './components/StatusPanel'
 import SoldierSelector from './components/SoldierSelector'
+import CollapsiblePanel from './components/CollapsiblePanel'
 import { getEntityDisplayLabel, sanitizeUnitIdentifiers } from './lib/displayNames'
 
 const normalizeBaseUrl = (value) => String(value || '').trim().replace(/\/+$/, '')
@@ -44,6 +45,42 @@ const resolveScenarioAssetUrl = (assetUrl) => {
   if (!assetUrl) return assetUrl
   if (/^https?:\/\//i.test(assetUrl)) return assetUrl
   return joinUrl(API_BASE_URL, assetUrl)
+}
+
+const getActiveFullscreenElement = () => {
+  if (typeof document === 'undefined') return null
+  return document.fullscreenElement || document.webkitFullscreenElement || null
+}
+
+const requestFullscreenForElement = async (element) => {
+  if (!element) {
+    throw new Error('Map container is unavailable')
+  }
+
+  if (typeof element.requestFullscreen === 'function') {
+    await element.requestFullscreen()
+    return
+  }
+
+  if (typeof element.webkitRequestFullscreen === 'function') {
+    element.webkitRequestFullscreen()
+    return
+  }
+
+  throw new Error('Fullscreen API is unavailable in this browser')
+}
+
+const exitActiveFullscreen = async () => {
+  if (typeof document === 'undefined') return
+
+  if (typeof document.exitFullscreen === 'function') {
+    await document.exitFullscreen()
+    return
+  }
+
+  if (typeof document.webkitExitFullscreen === 'function') {
+    document.webkitExitFullscreen()
+  }
 }
 
 const MAP_MODE_OPTIONS = [
@@ -86,6 +123,18 @@ const DEFAULT_SEARCH_STATE = {
 const DEFAULT_SIMULATION_SETTINGS = {
   slowdown_factor: 1,
   speed_multiplier: 1
+}
+
+const DEFAULT_COLLAPSED_PANELS = {
+  mapMode: false,
+  scenarioLoader: false,
+  mapEditor: false,
+  systemStatus: false,
+  suggestedCommands: false,
+  selectedUnit: false,
+  selectedMapObject: false,
+  legend: false,
+  recentCommands: false
 }
 
 const EDITOR_TOOL_OPTIONS = [
@@ -302,13 +351,16 @@ const buildCommandHistoryEntry = (payload, fallbackOrigin = 'unknown') => {
 
   const commandText = String(payload.transcribed_text || payload.message || '').trim()
   if (!commandText) return null
+  const status = ['report_review', 'command_pending', 'command_canceled', 'command_ignored'].includes(payload.event)
+    ? (payload.status || 'unknown')
+    : (payload.search_state?.mission_status || payload.status || 'unknown')
 
   return {
     commandId: payload.command_id || null,
     timestamp: payload.timestamp || new Date().toISOString(),
     origin: payload.origin || payload.operator_context?.active_operator || fallbackOrigin || 'unknown',
     command: commandText,
-    status: payload.search_state?.mission_status || payload.status || 'unknown',
+    status,
     goal: payload.parsed_command?.goal || payload.action_code || 'UNKNOWN',
     executionState: payload.parsed_command?.execution_state || 'NONE'
   }
@@ -327,6 +379,99 @@ const getCommandHistoryKey = (entry) => {
   ].join('|')
 }
 
+const COMMAND_INPUT_SOURCE_META = {
+  'browser-text-command': {
+    label: 'Command Center Input',
+    summary: 'Command Center',
+    detail: 'Direct browser-issued command',
+    badgeClass: 'border-slate-300/40 bg-slate-500/10 text-slate-100'
+  },
+  'browser-push-to-talk': {
+    label: 'Browser Mic Active',
+    summary: 'Browser Mic',
+    detail: 'Push-to-talk audio captured in the browser',
+    badgeClass: 'border-emerald-300/40 bg-emerald-500/10 text-emerald-100'
+  },
+  'jetson-wakeword': {
+    label: 'Jetson Mic Pipeline',
+    summary: 'Jetson Mic',
+    detail: 'Wake-word audio uplink received from Jetson',
+    badgeClass: 'border-sky-300/50 bg-sky-500/10 text-sky-100'
+  },
+  'jetson-esp32-ptt': {
+    label: 'ESP32 Signal Received',
+    summary: 'ESP32 Signal',
+    detail: 'ESP32 push-to-talk relayed through the Jetson pipeline',
+    badgeClass: 'border-cyan-200/70 bg-cyan-500/15 text-cyan-50'
+  }
+}
+
+const getCommandInputSourceMeta = (inputSource) => (
+  COMMAND_INPUT_SOURCE_META[inputSource] || {
+    label: 'Signal Path Unknown',
+    summary: 'Unknown Path',
+    detail: 'No command ingress metadata was reported',
+    badgeClass: 'border-white/20 bg-white/10 text-white'
+  }
+)
+
+const buildCurrentCommandState = (payload, fallbackOrigin = 'unknown') => {
+  const inputSource = payload.input_source || 'unknown'
+  const inputSourceMeta = getCommandInputSourceMeta(inputSource)
+
+  return {
+    commandId: payload.command_id || null,
+    timestamp: new Date().toLocaleTimeString(),
+    origin: payload.origin || payload.operator_context?.active_operator || fallbackOrigin,
+    target: payload.target_location || 'Unknown',
+    status: payload.search_state?.mission_status || payload.status || 'processing',
+    nodes: payload.active_nodes?.length || payload.nodes?.length || 0,
+    totalTime: `${(payload.total_propagation_ms || 0).toFixed(0)}ms`,
+    message: payload.confirmation_text || payload.message || '',
+    pendingExecute: Boolean(payload.pending_execute?.present),
+    callsign: payload.parsed_command?.callsign || 'JARVIS',
+    goal: payload.parsed_command?.goal || payload.action_code || 'UNKNOWN',
+    inputSource,
+    inputSourceLabel: inputSourceMeta.label,
+    inputSourceSummary: inputSourceMeta.summary,
+    inputSourceDetail: inputSourceMeta.detail,
+    inputSourceBadgeClass: inputSourceMeta.badgeClass
+  }
+}
+
+const getCurrentCommandDirective = (payload) => {
+  const eventName = payload?.event
+  const goal = payload?.parsed_command?.goal || payload?.action_code || ''
+
+  if (eventName === 'command_canceled') return 'clear'
+  if (goal === 'ABORT' || goal === 'DISREGARD') return 'clear'
+  if (eventName === 'report_review' || goal === 'REVIEW_REPORTS') return 'keep'
+  if (eventName === 'command_ignored' || goal === 'NO_OP') return 'keep'
+  if (!payload?.status && !eventName) return 'keep'
+  return 'set'
+}
+
+const shouldApplyPayloadState = (payload) => payload?.event !== 'report_review'
+
+const normalizeSuggestedCommands = (commands) => {
+  const values = typeof commands === 'string'
+    ? commands.split(/\r?\n/)
+    : Array.isArray(commands)
+      ? commands
+      : []
+
+  const normalized = []
+  values.forEach((value) => {
+    const command = String(value || '').trim()
+    if (command && !normalized.includes(command)) {
+      normalized.push(command)
+    }
+  })
+  return normalized
+}
+
+const serializeSuggestedCommands = (commands) => normalizeSuggestedCommands(commands).join('\n')
+
 const getNextNodeId = (nodes, prefix) => {
   const pattern = new RegExp(`^${prefix}-(\\d+)$`)
   const nextIndex = (nodes || []).reduce((highest, node) => {
@@ -343,8 +488,10 @@ function App() {
   const [selectedScenarioKey, setSelectedScenarioKey] = useState('')
   const [scenarioName, setScenarioName] = useState('Blank Workspace')
   const [scenarioNameDirty, setScenarioNameDirty] = useState(false)
+  const [suggestedCommandsText, setSuggestedCommandsText] = useState('')
   const [events, setEvents] = useState([])
   const [currentCommand, setCurrentCommand] = useState(null)
+  const [missionBannerCollapsed, setMissionBannerCollapsed] = useState(false)
   const [communicationPlayback, setCommunicationPlayback] = useState(null)
   const [connectionStatus, setConnectionStatus] = useState('disconnected')
   const [commandHistory, setCommandHistory] = useState([])
@@ -354,20 +501,24 @@ function App() {
   const [selectedMapEntity, setSelectedMapEntity] = useState(null)
   const [mapMode, setMapMode] = useState('nato')
   const [showEntityLabels, setShowEntityLabels] = useState(true)
+  const [mapFullscreenActive, setMapFullscreenActive] = useState(false)
   const [editMode, setEditMode] = useState(false)
   const [editorTool, setEditorTool] = useState('select')
   const [editorStatus, setEditorStatus] = useState('Map editor ready')
   const [editorBusy, setEditorBusy] = useState(false)
   const [scenarioBusy, setScenarioBusy] = useState(false)
+  const [collapsedPanels, setCollapsedPanels] = useState(DEFAULT_COLLAPSED_PANELS)
   const wsRef = useRef(null)
   const reconnectTimeoutRef = useRef(null)
   const reconnectAttemptsRef = useRef(0)
   const isCleaningUpRef = useRef(false)
   const seenCommandHistoryKeysRef = useRef(new Set())
   const overlayInputRef = useRef(null)
+  const mapShellRef = useRef(null)
   const entityIdSequenceRef = useRef(1)
   const activeScenarioKeyRef = useRef('')
   const scenarioNameDirtyRef = useRef(false)
+  const suggestedCommandsDirtyRef = useRef(false)
   const scenarioSelectionDirtyRef = useRef(false)
   const lastPlaybackKeyRef = useRef(null)
   const MAX_RECONNECT_ATTEMPTS = 5
@@ -376,6 +527,7 @@ function App() {
   const syncScenarioDrafts = (scenarioInfo, options = {}) => {
     const nextScenarioKey = scenarioInfo?.relative_path || ''
     const nextScenarioName = scenarioInfo?.name || 'Blank Workspace'
+    const nextSuggestedCommands = serializeSuggestedCommands(scenarioInfo?.suggested_commands)
     const scenarioChanged = activeScenarioKeyRef.current !== nextScenarioKey
 
     activeScenarioKeyRef.current = nextScenarioKey
@@ -390,6 +542,18 @@ function App() {
       scenarioNameDirtyRef.current = false
       setScenarioNameDirty(false)
     }
+
+    if (options.force || scenarioChanged || !suggestedCommandsDirtyRef.current) {
+      setSuggestedCommandsText(nextSuggestedCommands)
+      suggestedCommandsDirtyRef.current = false
+    }
+  }
+
+  const togglePanel = (panelId) => {
+    setCollapsedPanels((previous) => ({
+      ...previous,
+      [panelId]: !previous[panelId]
+    }))
   }
 
   const applyIncomingState = (payload, options = {}) => {
@@ -554,6 +718,25 @@ function App() {
   }
 
   useEffect(() => {
+    if (typeof document === 'undefined') return undefined
+
+    const syncMapFullscreenState = () => {
+      const fullscreenElement = getActiveFullscreenElement()
+      const mapShell = mapShellRef.current
+      setMapFullscreenActive(Boolean(fullscreenElement && mapShell && fullscreenElement === mapShell))
+    }
+
+    syncMapFullscreenState()
+    document.addEventListener('fullscreenchange', syncMapFullscreenState)
+    document.addEventListener('webkitfullscreenchange', syncMapFullscreenState)
+
+    return () => {
+      document.removeEventListener('fullscreenchange', syncMapFullscreenState)
+      document.removeEventListener('webkitfullscreenchange', syncMapFullscreenState)
+    }
+  }, [])
+
+  useEffect(() => {
     isCleaningUpRef.current = false
 
     if (wsRef.current?.readyState === WebSocket.OPEN || wsRef.current?.readyState === WebSocket.CONNECTING) {
@@ -595,29 +778,27 @@ function App() {
           if (
             data.event === 'gossip_update' ||
             data.event === 'swarm_state' ||
+            data.event === 'report_review' ||
             data.event === 'command_pending' ||
             data.event === 'command_canceled' ||
             data.event === 'command_ignored'
           ) {
             console.log('[App] Updating swarm state from command response')
-            applyIncomingState(data)
+            if (shouldApplyPayloadState(data)) {
+              applyIncomingState(data)
+            }
             queueCommunicationPlayback(data)
             pushCommandHistoryEntry(data, data.origin || data.operator_context?.active_operator || activeSoldier)
             if (data.origin) {
               setSelectedDrone(data.origin)
               setSelectedMapEntity(null)
             }
-            setCurrentCommand({
-              timestamp: new Date().toLocaleTimeString(),
-              origin: data.origin || data.operator_context?.active_operator || activeSoldier,
-              target: data.target_location || 'Unknown',
-              status: data.search_state?.mission_status || data.status || 'processing',
-              nodes: data.active_nodes?.length || data.nodes?.length || 0,
-              totalTime: `${(data.total_propagation_ms || 0).toFixed(0)}ms`,
-              message: data.confirmation_text || data.message || '',
-              pendingExecute: Boolean(data.pending_execute?.present),
-              callsign: data.parsed_command?.callsign || 'JARVIS'
-            })
+            const currentCommandDirective = getCurrentCommandDirective(data)
+            if (currentCommandDirective === 'clear') {
+              setCurrentCommand(null)
+            } else if (currentCommandDirective === 'set') {
+              setCurrentCommand(buildCurrentCommandState(data, activeSoldier))
+            }
             return
           }
 
@@ -700,6 +881,13 @@ function App() {
   }, [swarmState])
 
   useEffect(() => {
+    if (!currentCommand) {
+      return
+    }
+    setMissionBannerCollapsed(false)
+  }, [currentCommand?.commandId, currentCommand?.timestamp])
+
+  useEffect(() => {
     void fetchSoldierStatus(activeSoldier)
   }, [activeSoldier])
 
@@ -709,7 +897,8 @@ function App() {
       let historyCommand = typeof transcript === 'string' ? transcript : 'Processing audio...'
       const originPayload = {
         origin: activeSoldier,
-        operator_node: activeSoldier
+        operator_node: activeSoldier,
+        input_source: 'browser-text-command'
       }
 
       if (typeof transcript === 'string') {
@@ -732,6 +921,7 @@ function App() {
         formData.append('audio', transcript.audioBlob, `recording.${extension}`)
         formData.append('origin', activeSoldier)
         formData.append('operator_node', activeSoldier)
+        formData.append('input_source', 'browser-push-to-talk')
         response = await fetch(resolveApiUrl('/api/transcribe-command'), {
           method: 'POST',
           body: formData
@@ -754,7 +944,7 @@ function App() {
         activeSoldier
       )
 
-      if (result.nodes?.length) {
+      if (result.nodes?.length && shouldApplyPayloadState(result)) {
         applyIncomingState(result)
       }
       queueCommunicationPlayback(result)
@@ -765,17 +955,12 @@ function App() {
       }
 
       if (result.status) {
-        setCurrentCommand({
-          timestamp: new Date().toLocaleTimeString(),
-          origin: result.origin || activeSoldier,
-          target: result.target_location || 'Unknown',
-          status: result.search_state?.mission_status || result.status || 'processing',
-          nodes: result.active_nodes?.length || result.nodes?.length || 0,
-          totalTime: `${(result.total_propagation_ms || 0).toFixed(0)}ms`,
-          message: result.confirmation_text || result.message || '',
-          pendingExecute: Boolean(result.pending_execute?.present),
-          callsign: result.parsed_command?.callsign || 'JARVIS'
-        })
+        const currentCommandDirective = getCurrentCommandDirective(result)
+        if (currentCommandDirective === 'clear') {
+          setCurrentCommand(null)
+        } else if (currentCommandDirective === 'set') {
+          setCurrentCommand(buildCurrentCommandState(result, activeSoldier))
+        }
       }
 
       console.log('[App] Command sent:', result)
@@ -934,6 +1119,22 @@ function App() {
     }
   }
 
+  const handleMapFullscreenToggle = async () => {
+    const mapShell = mapShellRef.current
+    if (!mapShell) return
+
+    try {
+      if (getActiveFullscreenElement() === mapShell) {
+        await exitActiveFullscreen()
+        return
+      }
+
+      await requestFullscreenForElement(mapShell)
+    } catch (error) {
+      console.error('[App] Unable to toggle map fullscreen:', error)
+    }
+  }
+
   const handleOverlayUpload = async (event) => {
     const file = event.target.files?.[0]
     if (!file) return
@@ -967,7 +1168,10 @@ function App() {
       const response = await fetch(resolveApiUrl('/api/map-editor/save'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ scenario_name: scenarioName.trim() })
+        body: JSON.stringify({
+          scenario_name: scenarioName.trim(),
+          suggested_commands: normalizeSuggestedCommands(suggestedCommandsText)
+        })
       })
       const result = await response.json()
       if (!response.ok) {
@@ -1027,6 +1231,7 @@ function App() {
     ? 'Real-time'
     : `${simulationSlowdownFactor}x slower`
   const activeScenarioInfo = swarmState?.scenario_info || null
+  const currentSuggestedCommands = normalizeSuggestedCommands(suggestedCommandsText)
   const saveButtonLabel = activeScenarioInfo?.relative_path === 'swarm_initial_state.json'
     ? 'Save New Scenario'
     : 'Save Scenario'
@@ -1048,49 +1253,89 @@ function App() {
       </header>
 
       {currentCommand && (
-        <div className={currentCommand.pendingExecute
-          ? 'bg-gradient-to-r from-yellow-950 to-orange-900 border-b-4 border-yellow-500 p-6'
-          : 'bg-gradient-to-r from-yellow-900 to-red-900 border-b-4 border-red-500 p-6'}>
-          <div className="flex items-start justify-between">
-            <div>
-              <p className="text-xs uppercase tracking-widest text-gray-300 mb-2">📡 ACTIVE MISSION</p>
-              <h2 className="text-4xl font-bold text-yellow-300 mb-4">
-                {currentCommand.target || 'UNKNOWN'}
-              </h2>
-              {currentCommand.pendingExecute && (
-                <p className="mb-4 inline-block rounded border border-yellow-400 px-3 py-1 text-sm font-semibold uppercase tracking-wide text-yellow-200">
-                  Awaiting Execute
-                </p>
-              )}
-              <div className="grid gap-4 md:grid-cols-4 md:gap-8">
-                <div>
-                  <p className="text-xs text-gray-300 uppercase">Origin Soldier</p>
-                  <p className="text-xl font-bold text-white">
-                    {sanitizeUnitIdentifiers(currentCommand.origin || 'unknown')}
-                  </p>
+        <div className={`sticky top-0 z-30 border-b-4 shadow-xl backdrop-blur ${
+          currentCommand.pendingExecute
+            ? 'border-yellow-500 bg-gradient-to-r from-yellow-950/95 to-orange-900/95'
+            : 'border-red-500 bg-gradient-to-r from-yellow-900/95 to-red-900/95'
+        }`}>
+          <div className={`px-4 md:px-6 ${missionBannerCollapsed ? 'py-3' : 'py-5'}`}>
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="mb-2 text-xs uppercase tracking-widest text-gray-300">📡 Active Mission</p>
+                <div className="flex flex-wrap items-center gap-3">
+                  <h2 className={`min-w-0 truncate font-bold text-yellow-300 ${missionBannerCollapsed ? 'text-2xl' : 'text-4xl'}`}>
+                    {currentCommand.target || 'UNKNOWN'}
+                  </h2>
+                  {currentCommand.inputSourceLabel && (
+                    <p className={`inline-block rounded border px-3 py-1 text-sm font-semibold uppercase tracking-wide ${currentCommand.inputSourceBadgeClass}`}>
+                      {currentCommand.inputSourceLabel}
+                    </p>
+                  )}
+                  {currentCommand.pendingExecute && (
+                    <p className="inline-block rounded border border-yellow-400 px-3 py-1 text-sm font-semibold uppercase tracking-wide text-yellow-200">
+                      Awaiting Execute
+                    </p>
+                  )}
                 </div>
+              </div>
+              <div className="ml-auto flex items-center gap-3 text-right text-sm text-gray-300">
                 <div>
-                  <p className="text-xs text-gray-300 uppercase">Status</p>
-                  <p className="text-xl font-bold text-white capitalize">
+                  <p>{currentCommand.timestamp}</p>
+                  <p className="text-xs uppercase tracking-wide text-gray-400">
                     {currentCommand.status.replace(/_/g, ' ')}
                   </p>
                 </div>
-                <div>
-                  <p className="text-xs text-gray-300 uppercase">Active Nodes</p>
-                  <p className="text-3xl font-bold text-white">{currentCommand.nodes}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-gray-300 uppercase">Propagation Time</p>
-                  <p className="text-2xl font-bold text-white">{currentCommand.totalTime}</p>
-                </div>
+                <button
+                  type="button"
+                  onClick={() => setMissionBannerCollapsed((previous) => !previous)}
+                  className="rounded border border-white/20 bg-black/20 px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-gray-100 transition hover:border-white/40 hover:bg-black/35"
+                >
+                  {missionBannerCollapsed ? 'Expand' : 'Collapse'}
+                </button>
               </div>
             </div>
-            <div className="text-right text-sm text-gray-300">
-              <p>{currentCommand.timestamp}</p>
-              {currentCommand.message && (
-                <p className="text-xs italic text-gray-400 mt-2">"{currentCommand.message}"</p>
-              )}
-            </div>
+
+            {missionBannerCollapsed ? (
+              <div className="mt-3 flex flex-wrap gap-x-6 gap-y-2 text-sm text-gray-200">
+                <span>Origin: {sanitizeUnitIdentifiers(currentCommand.origin || 'unknown')}</span>
+                <span>Signal: {currentCommand.inputSourceSummary}</span>
+                <span>Nodes: {currentCommand.nodes}</span>
+                <span>Propagation: {currentCommand.totalTime}</span>
+              </div>
+            ) : (
+              <div className="mt-4 flex flex-col gap-4">
+                <div className="grid gap-4 md:grid-cols-5 md:gap-8">
+                  <div>
+                    <p className="text-xs text-gray-300 uppercase">Origin Soldier</p>
+                    <p className="text-xl font-bold text-white">
+                      {sanitizeUnitIdentifiers(currentCommand.origin || 'unknown')}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-300 uppercase">Status</p>
+                    <p className="text-xl font-bold text-white capitalize">
+                      {currentCommand.status.replace(/_/g, ' ')}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-300 uppercase">Active Nodes</p>
+                    <p className="text-3xl font-bold text-white">{currentCommand.nodes}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-300 uppercase">Propagation Time</p>
+                    <p className="text-2xl font-bold text-white">{currentCommand.totalTime}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-300 uppercase">Signal Path</p>
+                    <p className="text-lg font-bold text-white">{currentCommand.inputSourceSummary}</p>
+                    <p className="mt-1 text-xs text-cyan-100/80">{currentCommand.inputSourceDetail}</p>
+                  </div>
+                </div>
+                {currentCommand.message && (
+                  <p className="text-xs italic text-gray-300">"{currentCommand.message}"</p>
+                )}
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -1110,9 +1355,21 @@ function App() {
                           : 'Full NATO map symbols with translucent unit labels'}
                       </p>
                     </div>
-                    <div className="min-w-[230px] rounded border border-gray-600 bg-gray-950/70 p-2">
-                      <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-gray-400">Map Mode</div>
-                      <div className="mt-2 flex gap-2">
+                    <div className="rounded border border-cyan-500/40 bg-cyan-500/10 px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-cyan-100">
+                      {MAP_MODE_OPTIONS.find((option) => option.id === mapMode)?.label || 'Map'}
+                    </div>
+                  </div>
+
+                  <div className="mt-3">
+                    <CollapsiblePanel
+                      title="Map Mode"
+                      subtitle="Change symbol style, label visibility, and replay pacing."
+                      collapsed={collapsedPanels.mapMode}
+                      onToggle={() => togglePanel('mapMode')}
+                      className="border-gray-600 bg-gray-950/70"
+                      bodyClassName="p-2"
+                    >
+                      <div className="flex gap-2">
                         {MAP_MODE_OPTIONS.map((option) => {
                           const isActive = option.id === mapMode
                           return (
@@ -1173,26 +1430,81 @@ function App() {
                           />
                         </label>
                       </div>
+                    </CollapsiblePanel>
+                  </div>
+
+                  <div
+                    ref={mapShellRef}
+                    className="map-shell mt-3 rounded border border-gray-700 bg-gray-950/40 p-3"
+                  >
+                    <div className="mb-3 flex items-center justify-between gap-3">
+                      <div className="text-[10px] font-bold uppercase tracking-[0.14em] text-gray-500">
+                        {mapFullscreenActive ? 'Fullscreen map active' : 'Expand map to fullscreen'}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          void handleMapFullscreenToggle()
+                        }}
+                        className="rounded border border-cyan-500/60 bg-cyan-500/10 px-3 py-1.5 text-[11px] font-bold uppercase tracking-wide text-cyan-100 transition hover:bg-cyan-500/20"
+                      >
+                        {mapFullscreenActive ? 'Exit Full Screen' : 'Maximize Map'}
+                      </button>
+                    </div>
+
+                    <div className="map-shell-frame">
+                      <div className="map-shell-stage">
+                        {swarmState ? (
+                          <SwarmCanvas
+                            state={swarmState}
+                            communicationPlayback={communicationPlayback}
+                            selectedDrone={selectedDrone}
+                            selectedMapEntity={selectedMapEntity}
+                            mapMode={mapMode}
+                            showEntityLabels={showEntityLabels}
+                            editMode={editMode}
+                            editorTool={editorTool}
+                            onDroneClick={(droneId) => {
+                              setSelectedDrone(droneId)
+                              if (droneId) {
+                                setSelectedMapEntity(null)
+                              }
+                            }}
+                            onMapEntitySelect={(selection) => {
+                              setSelectedMapEntity(selection)
+                              if (selection) {
+                                setSelectedDrone(null)
+                              }
+                            }}
+                            onMapEntityCreate={handleMapEntityCreate}
+                            onMapEntityMove={handleMapEntityMove}
+                            onDroneMove={handleDroneMove}
+                          />
+                        ) : (
+                          <div className="flex min-h-[24rem] items-center justify-center rounded bg-gray-900">
+                            <p className="text-gray-500">Awaiting swarm state...</p>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </div>
                 </div>
 
                 <div className="space-y-3">
-                  <div className="rounded border border-gray-600 bg-gray-900/70 p-3">
-                    <div className="flex flex-wrap items-start justify-between gap-3">
-                      <div>
-                        <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-gray-400">Scenario Loader</p>
-                        <p className="text-xs text-gray-400">
-                          {activeScenarioInfo
-                            ? `Active: ${activeScenarioInfo.name}`
-                            : 'Select a blank or saved scenario to load.'}
-                        </p>
-                      </div>
-                      {activeScenarioInfo && (
-                        <div className="rounded border border-gray-700 bg-gray-950/50 px-2 py-1 text-[10px] uppercase tracking-wide text-gray-400">
-                          {activeScenarioInfo.node_count} nodes / {activeScenarioInfo.structure_count} structures
-                        </div>
-                      )}
+                  <CollapsiblePanel
+                    title="Scenario Loader"
+                    subtitle={activeScenarioInfo
+                      ? `Active: ${activeScenarioInfo.name}`
+                      : 'Select a blank or saved scenario to load.'}
+                    collapsed={collapsedPanels.scenarioLoader}
+                    onToggle={() => togglePanel('scenarioLoader')}
+                    className="border-gray-600 bg-gray-900/70"
+                    bodyClassName="p-3"
+                  >
+                    <div className="rounded border border-gray-700 bg-gray-950/40 px-3 py-2 text-[10px] uppercase tracking-wide text-gray-400">
+                      {activeScenarioInfo
+                        ? `${activeScenarioInfo.node_count} nodes / ${activeScenarioInfo.structure_count} structures / ${activeScenarioInfo.suggested_command_count || 0} cmds`
+                        : 'No active scenario loaded'}
                     </div>
 
                     <div className="mt-3 flex flex-col gap-2 sm:flex-row">
@@ -1240,16 +1552,36 @@ function App() {
                       />
                     </label>
 
-                    <div className="mt-2 text-[11px] text-gray-500">
-                      Saving from the blank workspace creates a new scenario file in the library.
-                    </div>
-                  </div>
+                    <label className="mt-3 block text-xs text-gray-300">
+                      <span className="mb-1 block">Suggested Commands</span>
+                      <textarea
+                        rows="5"
+                        value={suggestedCommandsText}
+                        onChange={(event) => {
+                          setSuggestedCommandsText(event.target.value)
+                          suggestedCommandsDirtyRef.current = true
+                        }}
+                        className="w-full rounded border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100"
+                        placeholder="One command per line"
+                      />
+                    </label>
 
-                  <div className="rounded border border-gray-600 bg-gray-900/70 p-3">
+                    <div className="mt-2 text-[11px] text-gray-500">
+                      Saving from the blank workspace creates a new scenario file in the library. Suggested commands are stored with the scenario metadata and shown in the side rail.
+                    </div>
+                  </CollapsiblePanel>
+
+                  <CollapsiblePanel
+                    title="Map Editor"
+                    subtitle="Live scenario editing and save-to-config controls."
+                    collapsed={collapsedPanels.mapEditor}
+                    onToggle={() => togglePanel('mapEditor')}
+                    className="border-gray-600 bg-gray-900/70"
+                    bodyClassName="p-3"
+                  >
                     <div className="flex items-center justify-between gap-3">
-                      <div>
-                        <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-gray-400">Map Editor</p>
-                        <p className="text-xs text-gray-400">Live scenario editing and save-to-config controls.</p>
+                      <div className="text-xs text-gray-400">
+                        Place, move, and remove units or map objects in the current scenario.
                       </div>
                       <button
                         type="button"
@@ -1358,41 +1690,10 @@ function App() {
                         {editorStatus}
                       </div>
                     </div>
-                  </div>
+                  </CollapsiblePanel>
                 </div>
               </div>
 
-              {swarmState ? (
-                <SwarmCanvas
-                  state={swarmState}
-                  communicationPlayback={communicationPlayback}
-                  selectedDrone={selectedDrone}
-                  selectedMapEntity={selectedMapEntity}
-                  mapMode={mapMode}
-                  showEntityLabels={showEntityLabels}
-                  editMode={editMode}
-                  editorTool={editorTool}
-                  onDroneClick={(droneId) => {
-                    setSelectedDrone(droneId)
-                    if (droneId) {
-                      setSelectedMapEntity(null)
-                    }
-                  }}
-                  onMapEntitySelect={(selection) => {
-                    setSelectedMapEntity(selection)
-                    if (selection) {
-                      setSelectedDrone(null)
-                    }
-                  }}
-                  onMapEntityCreate={handleMapEntityCreate}
-                  onMapEntityMove={handleMapEntityMove}
-                  onDroneMove={handleDroneMove}
-                />
-              ) : (
-                <div className="w-full min-h-[24rem] flex items-center justify-center bg-gray-900 rounded">
-                  <p className="text-gray-500">Awaiting swarm state...</p>
-                </div>
-              )}
             </div>
           </div>
 
@@ -1409,39 +1710,109 @@ function App() {
             soldierStatus={soldierStatus}
           />
 
-          <StatusPanel connectionStatus={connectionStatus} swarmState={swarmState} />
+          <CollapsiblePanel
+            title="System Status"
+            subtitle="Connection health, mission state, and scenario diagnostics."
+            collapsed={collapsedPanels.systemStatus}
+            onToggle={() => togglePanel('systemStatus')}
+            className="border-gray-700 bg-gray-800"
+            bodyClassName="p-4"
+          >
+            <StatusPanel connectionStatus={connectionStatus} swarmState={swarmState} embedded />
+          </CollapsiblePanel>
+
+          <CollapsiblePanel
+            title="Suggested Commands"
+            subtitle={activeScenarioInfo
+              ? `Saved with ${activeScenarioInfo.name}`
+              : 'Commands associated with the current map.'}
+            collapsed={collapsedPanels.suggestedCommands}
+            onToggle={() => togglePanel('suggestedCommands')}
+            className="border-gray-700 bg-gray-800"
+            bodyClassName="p-4"
+          >
+            {currentSuggestedCommands.length === 0 ? (
+              <p className="text-sm text-gray-500">
+                No suggested commands saved for this map yet.
+              </p>
+            ) : (
+              <div className="space-y-2">
+                {currentSuggestedCommands.map((command, index) => (
+                  <div key={`${command}-${index}`} className="rounded border border-cyan-500/30 bg-cyan-500/5 px-3 py-2">
+                    <div className="text-[10px] font-bold uppercase tracking-wide text-cyan-200">Suggestion {index + 1}</div>
+                    <div className="mt-1 text-sm text-gray-100">{command}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+            <p className="mt-3 text-[11px] text-gray-500">
+              Edit these in Scenario Loader, then save the scenario to persist them with the map.
+            </p>
+          </CollapsiblePanel>
 
           {selectedDroneRecord && (
-            <DroneStatusCard
-              drone={selectedDroneRecord}
-              commsStatus="online"
-            />
+            <CollapsiblePanel
+              title="Selected Unit"
+              subtitle={getEntityDisplayLabel(selectedDroneRecord)}
+              collapsed={collapsedPanels.selectedUnit}
+              onToggle={() => togglePanel('selectedUnit')}
+              className="border-gray-700 bg-gray-800"
+              bodyClassName="p-4"
+            >
+              <DroneStatusCard
+                drone={selectedDroneRecord}
+                commsStatus="online"
+                embedded
+              />
+            </CollapsiblePanel>
           )}
 
           {selectedMapRecord && (
-            <div className="bg-gray-800 rounded border border-gray-700 p-4 space-y-2">
-              <div className="text-xs uppercase tracking-[0.18em] text-gray-400">Selected Map Object</div>
-              <div className="text-lg font-bold text-gray-100">{getEntityDisplayLabel(selectedMapRecord)}</div>
-              <div className="text-sm text-gray-300 capitalize">
-                {(selectedMapEntity?.kind || '').replace(/_/g, ' ')} / {(selectedMapRecord.subtype || selectedMapRecord.type || 'unknown').replace(/_/g, ' ')}
-              </div>
-              {Array.isArray(selectedMapRecord.position) && (
-                <div className="font-mono text-xs text-gray-400">
-                  Position: {Math.round(selectedMapRecord.position[0])}, {Math.round(selectedMapRecord.position[1])}
+            <CollapsiblePanel
+              title="Selected Map Object"
+              subtitle={getEntityDisplayLabel(selectedMapRecord)}
+              collapsed={collapsedPanels.selectedMapObject}
+              onToggle={() => togglePanel('selectedMapObject')}
+              className="border-gray-700 bg-gray-800"
+              bodyClassName="p-4"
+            >
+              <div className="space-y-2">
+                <div className="text-sm text-gray-300 capitalize">
+                  {(selectedMapEntity?.kind || '').replace(/_/g, ' ')} / {(selectedMapRecord.subtype || selectedMapRecord.type || 'unknown').replace(/_/g, ' ')}
                 </div>
-              )}
-            </div>
+                {Array.isArray(selectedMapRecord.position) && (
+                  <div className="font-mono text-xs text-gray-400">
+                    Position: {Math.round(selectedMapRecord.position[0])}, {Math.round(selectedMapRecord.position[1])}
+                  </div>
+                )}
+              </div>
+            </CollapsiblePanel>
           )}
 
-          <GridLegend activeDrones={swarmState?.nodes || []} mapMode={mapMode} />
+          <CollapsiblePanel
+            title="Legend"
+            subtitle="Unit symbols, map markers, and interaction hints."
+            collapsed={collapsedPanels.legend}
+            onToggle={() => togglePanel('legend')}
+            className="border-gray-700 bg-gray-800"
+            bodyClassName="p-4"
+          >
+            <GridLegend activeDrones={swarmState?.nodes || []} mapMode={mapMode} embedded />
+          </CollapsiblePanel>
 
           <div className="bg-gray-800 rounded border border-gray-700 p-4">
             <h3 className="text-lg font-bold mb-4">🎤 Voice Command</h3>
             <PushToTalkButton onCommand={handleVoiceCommand} activeSoldierLabel={activeSoldierLabel} />
           </div>
 
-          <div className="bg-gray-800 rounded border border-gray-700 p-4 min-h-[12rem] max-h-[20rem] overflow-y-auto">
-            <h3 className="text-lg font-bold mb-2">📜 Recent Commands</h3>
+          <CollapsiblePanel
+            title="Recent Commands"
+            subtitle="Most recent voice and command-center requests."
+            collapsed={collapsedPanels.recentCommands}
+            onToggle={() => togglePanel('recentCommands')}
+            className="border-gray-700 bg-gray-800"
+            bodyClassName="p-4 min-h-[12rem] max-h-[20rem] overflow-y-auto"
+          >
             {commandHistory.length === 0 ? (
               <p className="text-gray-500 text-sm">No commands yet</p>
             ) : (
@@ -1458,7 +1829,7 @@ function App() {
                 ))}
               </div>
             )}
-          </div>
+          </CollapsiblePanel>
         </div>
       </main>
     </div>

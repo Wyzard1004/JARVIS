@@ -23,6 +23,7 @@ DEFAULT_GOALS = [
     "AVOID_AREA",
     "HOLD_POSITION",
     "SCAN_AREA",
+    "REVIEW_REPORTS",
     "LOITER",
     "MARK",
     "EXECUTE",
@@ -369,7 +370,7 @@ def validate_command(payload: dict[str, Any]) -> dict[str, Any]:
     if _goal_requires_avoid(normalized["goal"]) and not normalized["avoid_location"]:
         return build_safe_fallback()
 
-    if normalized["goal"] in {"ABORT", "HOLD_POSITION", "STANDBY", "EXECUTE", "DISREGARD", "NO_OP"}:
+    if normalized["goal"] in {"ABORT", "HOLD_POSITION", "STANDBY", "EXECUTE", "DISREGARD", "REVIEW_REPORTS", "NO_OP"}:
         normalized["target_location"] = None
         normalized["avoid_location"] = None
         normalized["target_location_detail"] = None
@@ -418,12 +419,47 @@ def parse_with_rules(text: str) -> dict[str, Any] | None:
         "terminal_proword": terminal_proword,
     }
 
-    if any(term in lowered for term in ["abort", "cancel mission", "stop mission", "stand down"]):
+    if any(
+        term in lowered
+        for term in [
+            "abort",
+            "cancel mission",
+            "stop mission",
+            "stand down",
+            "end mission",
+            "end attack",
+            "end attack mission",
+            "terminate attack",
+            "terminate attack mission",
+            "cancel attack mission",
+        ]
+    ):
         return validate_command(
             {
                 **base_payload,
                 "goal": "ABORT",
                 "confidence": 0.99,
+            }
+        )
+
+    if any(
+        term in lowered
+        for term in [
+            "review reports",
+            "review report",
+            "process reports",
+            "process report",
+            "mission report",
+            "mission reports",
+            "status report",
+            "report status",
+        ]
+    ):
+        return validate_command(
+            {
+                **base_payload,
+                "goal": "REVIEW_REPORTS",
+                "confidence": 0.97,
             }
         )
 
@@ -590,7 +626,8 @@ def _ollama_messages(text: str) -> list[dict[str, str]]:
                 "If the request is unclear or unsafe, return goal NO_OP with null locations. "
                 "ATTACK_AREA must set confirmation_required true and execution_state PENDING_EXECUTE. "
                 "Recon patrol routes should use goal SCAN_AREA with target_location as the start "
-                "and patrol_end_location as the end."
+                "and patrol_end_location as the end. "
+                "Reviewing reports should use goal REVIEW_REPORTS with no target."
             ),
         },
         {
@@ -601,6 +638,7 @@ def _ollama_messages(text: str) -> list[dict[str, str]]:
                 "Return only one JSON object. "
                 "Examples: 'JARVIS, move to Sector Bravo 3, over.' "
                 "'JARVIS, recon patrol Bravo 1 to Bravo 3, over.' "
+                "'JARVIS, review reports, over.' "
                 "'JARVIS, all units, abort, out.' "
                 "'JARVIS, execute, over.'"
             ),
@@ -726,6 +764,8 @@ def create_confirmation_text(command: dict[str, Any]) -> str:
         return f"{callsign}, recon patrol from {humanize(target)} to {humanize(patrol_end)}, over."
     if goal == "SCAN_AREA" and target:
         return f"{callsign}, scanning {humanize(target)}, over."
+    if goal == "REVIEW_REPORTS":
+        return f"{callsign}, reviewing mission reports, over."
     if goal == "LOITER" and target:
         return f"{callsign}, loitering at {humanize(target)}, over."
     if goal == "MARK" and target:

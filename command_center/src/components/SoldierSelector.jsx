@@ -126,12 +126,16 @@ function SoldierSelector({ activeSoldier, availableSoldiers = [], onSoldierChang
 
       {/* Quick Command Hints */}
       <div className="mt-4 bg-gray-800 border border-gray-600 rounded p-3 text-xs text-gray-400">
-        <div className="font-semibold text-gray-300 mb-2">Available Commands:</div>
+        <div className="font-semibold text-gray-300 mb-2">Voice Commands:</div>
         <div className="space-y-1">
-          <div>→ <span className="text-cyan-400">Request Recon</span> - Send recon drones to scan area</div>
-          <div>→ <span className="text-red-400">Request Attack</span> - Authorize strike on confirmed target</div>
-          <div>→ <span className="text-yellow-400">Approve Command</span> - Authorize pending operations</div>
-          <div>→ <span className="text-green-400">Process Reports</span> - Review mission outcomes</div>
+          <div>→ <span className="text-cyan-400">"Scan Grid Echo 5"</span> - Send recon drones to scan an area</div>
+          <div>→ <span className="text-red-400">"Attack Grid Echo 5"</span> - Stage a strike on a confirmed target</div>
+          <div>→ <span className="text-yellow-400">"Execute"</span> - Approve a pending attack command</div>
+          <div>→ <span className="text-emerald-400">"Review reports"</span> - Summarize current reports without retasking the swarm</div>
+          <div>→ <span className="text-orange-400">"End attack mission"</span> - Abort an active attack mission and clear the mission banner</div>
+        </div>
+        <div className="mt-3 border-t border-gray-700 pt-2 text-[11px] text-gray-500">
+          Detailed outcomes remain visible in <span className="text-gray-300">Mission Events</span> and <span className="text-gray-300">Recent Commands</span>.
         </div>
       </div>
     </div>

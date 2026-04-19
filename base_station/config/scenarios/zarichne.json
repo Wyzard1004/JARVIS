@@ -1,5 +1,10 @@
 {
   "scenario": "Zarichne",
+  "suggested_commands": [
+    "jarvis scan zarichne town center",
+    "jarvis move to the southern bridge",
+    "jarvis avoid the central avenue"
+  ],
   "timestamp_ms": 0,
   "coordinate_space_size": 1000,
   "map_overlay": {

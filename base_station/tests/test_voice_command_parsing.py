@@ -29,6 +29,19 @@ class VoiceCommandParsingTests(unittest.TestCase):
             "JARVIS, recon patrol from Grid Bravo 1 to Grid Bravo 3, over.",
         )
 
+    def test_review_reports_command_parses(self):
+        parsed = process_voice_command("JARVIS, review reports, over.")
+
+        self.assertEqual(parsed["goal"], "REVIEW_REPORTS")
+        self.assertIsNone(parsed["target_location"])
+        self.assertEqual(create_confirmation_text(parsed), "JARVIS, reviewing mission reports, over.")
+
+    def test_end_attack_mission_phrase_maps_to_abort(self):
+        parsed = process_voice_command("JARVIS, end attack mission, out.")
+
+        self.assertEqual(parsed["goal"], "ABORT")
+        self.assertEqual(create_confirmation_text(parsed), "JARVIS, abort acknowledged, out.")
+
     def test_swarm_intent_humanizes_patrol_route_locations(self):
         parsed_command = {
             "intent": "swarm_command",
