@@ -4,7 +4,7 @@
  * Displays detailed status for a selected drone:
  * - Current position and 8x8 display sector
  * - Behavior (Lurk/Patrol/Transit)
- * - Health, fuel, and transmission status
+ * - Communications and sensor status
  * - Next waypoint (if patrolling)
  */
 
@@ -28,7 +28,7 @@ const BEHAVIOR_LABELS = {
   swarm: 'Swarming'
 }
 
-function DroneStatusCard({ drone, commsStatus = 'online', batteryLevels = {} }) {
+function DroneStatusCard({ drone, commsStatus = 'online' }) {
   if (!drone) {
     return (
       <div className="w-full p-4 bg-gray-700 border border-gray-600 rounded text-center text-gray-400">
@@ -36,9 +36,6 @@ function DroneStatusCard({ drone, commsStatus = 'online', batteryLevels = {} }) 
       </div>
     )
   }
-
-  // Get persistent battery level for this drone
-  const battery = batteryLevels[drone.id] || 75
 
   const position = Array.isArray(drone.position) ? drone.position : null
   const formatSector = (point) => {
@@ -60,6 +57,11 @@ function DroneStatusCard({ drone, commsStatus = 'online', batteryLevels = {} }) 
   const getTransmissionRange = () => {
     if (typeof drone.transmission_range !== 'number') return 'Unknown'
     return `${drone.transmission_range.toFixed(0)}u`
+  }
+
+  const getDetectionRadius = () => {
+    if (typeof drone.detection_radius !== 'number' || drone.detection_radius <= 0) return null
+    return `${drone.detection_radius.toFixed(0)}u`
   }
 
   return (
@@ -88,20 +90,6 @@ function DroneStatusCard({ drone, commsStatus = 'online', batteryLevels = {} }) 
         </div>
       </div>
 
-      {/* Battery Level */}
-      <div>
-        <div className="flex justify-between items-center text-xs text-gray-400 font-bold mb-1">
-          <span>BATTERY</span>
-          <span className="text-sm font-mono text-gray-200">{battery}%</span>
-        </div>
-        <div className="w-full bg-gray-600 rounded-full h-2 overflow-hidden">
-          <div
-            className="bg-green-500 h-full transition-all"
-            style={{ width: `${battery}%` }}
-          />
-        </div>
-      </div>
-
       {/* Communications Status */}
       <div>
         <div className="text-xs text-gray-400 font-bold">COMMS</div>
@@ -112,6 +100,18 @@ function DroneStatusCard({ drone, commsStatus = 'online', batteryLevels = {} }) 
           Range: {getTransmissionRange()} ({typeof drone.transmission_range === 'number' ? `${(drone.transmission_range / 125).toFixed(1)} sectors` : 'n/a'})
         </div>
       </div>
+
+      {getDetectionRadius() && (
+        <div>
+          <div className="text-xs text-gray-400 font-bold">SENSORS</div>
+          <div className="mt-1 font-mono text-sm text-gray-200">
+            Detection Radius: {getDetectionRadius()}
+          </div>
+          <div className="text-xs text-gray-400 mt-1">
+            Coverage: {(drone.detection_radius / 125).toFixed(1)} sectors
+          </div>
+        </div>
+      )}
 
       {/* Next Waypoint (if patrolling) */}
       {drone.behavior === 'patrol' && drone.next_waypoint && (
