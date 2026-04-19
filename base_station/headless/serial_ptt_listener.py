@@ -125,6 +125,7 @@ class JetsonSerialPTTListener:
         self.serial_port = os.getenv("JARVIS_SERIAL_PORT", "").strip()
         self.serial_baud = int(os.getenv("JARVIS_SERIAL_BAUD", 115200))
         self.serial_timeout = float(os.getenv("JARVIS_SERIAL_TIMEOUT", 0.05))
+        self.serial_startup_grace_seconds = float(os.getenv("JARVIS_SERIAL_STARTUP_GRACE_SECONDS", 2.5))
 
         self.audio_device_name = os.getenv("JARVIS_AUDIO_DEVICE_NAME", "").strip().lower()
         self.audio_device_index = self._parse_int_env("JARVIS_AUDIO_DEVICE_INDEX")
@@ -163,6 +164,8 @@ class JetsonSerialPTTListener:
         self._last_relay_error: dict[str, Any] | None = None
         self._last_serial_line: str | None = None
         self._last_serial_rx_at: float | None = None
+        self._serial_noise_until = 0.0
+        self._suppressed_serial_noise = 0
 
     @staticmethod
     def _parse_int_env(name: str) -> int | None:
@@ -276,6 +279,8 @@ class JetsonSerialPTTListener:
             pass
         self._serial.reset_input_buffer()
         self._serial.reset_output_buffer()
+        self._serial_noise_until = time.time() + max(0.0, self.serial_startup_grace_seconds)
+        self._suppressed_serial_noise = 0
 
     def _resolve_serial_port(self) -> str:
         if self.serial_port:
@@ -321,6 +326,13 @@ class JetsonSerialPTTListener:
 
         upper = line.upper()
 
+        if upper == "GATEWAY_BOOT":
+            self._serial_noise_until = timestamp + max(0.0, self.serial_startup_grace_seconds)
+            self._suppressed_serial_noise = 0
+            print("[PTT] Gateway boot detected; waiting for serial to settle")
+            self._write_serial("READY")
+            return
+
         if upper.startswith("ACK "):
             self._record_ack(line, timestamp)
             return
@@ -344,6 +356,12 @@ class JetsonSerialPTTListener:
         if normalized in self.START_EVENTS | self.STOP_EVENTS | self.CANCEL_EVENTS:
             print(f"[PTT] ESP32 event: {normalized}")
             self._ptt_events.put(normalized)
+            return
+
+        if timestamp < self._serial_noise_until:
+            self._suppressed_serial_noise += 1
+            if self._suppressed_serial_noise == 1:
+                print("[PTT] Ignoring serial startup noise while gateway settles")
             return
 
         print(f"[PTT] ESP32 message: {line}")
