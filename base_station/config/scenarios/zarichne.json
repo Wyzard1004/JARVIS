@@ -1,14 +1,14 @@
 {
   "scenario": "Zarichne",
   "suggested_commands": [
-    "jarvis scan zarichne town center",
-    "jarvis move to the southern bridge",
-    "jarvis avoid the central avenue"
+    "JARVIS Recon Patrol Echo 5 to Echo 8",
+    "JARVIS Recon Patrol Bravo 7 to Golf 7",
+    "JARVIS Attack Echo 8"
   ],
   "timestamp_ms": 0,
   "coordinate_space_size": 1000,
   "map_overlay": {
-    "asset_url": "http://100.71.205.85:8000/scenario-assets/overlay-ff8c3d0fc70343f4a06f329bb638848c.png",
+    "asset_url": "/scenario-assets/overlay-ff8c3d0fc70343f4a06f329bb638848c.png",
     "asset_path": "scenario_assets/overlay-ff8c3d0fc70343f4a06f329bb638848c.png",
     "opacity": 0.72,
     "visible": true
@@ -29,7 +29,8 @@
         "shape": "square",
         "color": "#8B5CF6",
         "radius": 14
-      }
+      },
+      "status": "active"
     },
     {
       "id": "soldier-2",
@@ -46,7 +47,8 @@
         "shape": "square",
         "color": "#8B5CF6",
         "radius": 14
-      }
+      },
+      "status": "active"
     },
     {
       "id": "soldier-3",
@@ -63,7 +65,8 @@
         "shape": "square",
         "color": "#8B5CF6",
         "radius": 14
-      }
+      },
+      "status": "active"
     },
     {
       "id": "soldier-4",
@@ -80,7 +83,8 @@
         "shape": "square",
         "color": "#8B5CF6",
         "radius": 14
-      }
+      },
+      "status": "active"
     },
     {
       "id": "soldier-5",
@@ -97,7 +101,8 @@
         "shape": "square",
         "color": "#8B5CF6",
         "radius": 14
-      }
+      },
+      "status": "active"
     },
     {
       "id": "soldier-6",
@@ -114,7 +119,8 @@
         "shape": "square",
         "color": "#8B5CF6",
         "radius": 14
-      }
+      },
+      "status": "active"
     },
     {
       "id": "soldier-7",
@@ -131,7 +137,8 @@
         "shape": "square",
         "color": "#8B5CF6",
         "radius": 14
-      }
+      },
+      "status": "active"
     },
     {
       "id": "soldier-8",
@@ -148,7 +155,8 @@
         "shape": "square",
         "color": "#8B5CF6",
         "radius": 14
-      }
+      },
+      "status": "active"
     },
     {
       "id": "soldier-9",
@@ -165,7 +173,8 @@
         "shape": "square",
         "color": "#8B5CF6",
         "radius": 14
-      }
+      },
+      "status": "active"
     },
     {
       "id": "soldier-10",
@@ -182,7 +191,8 @@
         "shape": "square",
         "color": "#8B5CF6",
         "radius": 14
-      }
+      },
+      "status": "active"
     },
     {
       "id": "soldier-11",
@@ -199,7 +209,8 @@
         "shape": "square",
         "color": "#8B5CF6",
         "radius": 14
-      }
+      },
+      "status": "active"
     },
     {
       "id": "soldier-12",
@@ -216,7 +227,8 @@
         "shape": "square",
         "color": "#8B5CF6",
         "radius": 14
-      }
+      },
+      "status": "active"
     },
     {
       "id": "attack-1",
@@ -234,7 +246,8 @@
         "color": "#7DD3FC",
         "radius": 15
       },
-      "speed": 120.0
+      "speed": 120.0,
+      "status": "active"
     },
     {
       "id": "attack-2",
@@ -252,7 +265,8 @@
         "color": "#7DD3FC",
         "radius": 15
       },
-      "speed": 120.0
+      "speed": 120.0,
+      "status": "active"
     },
     {
       "id": "attack-3",
@@ -270,7 +284,8 @@
         "color": "#7DD3FC",
         "radius": 15
       },
-      "speed": 120.0
+      "speed": 120.0,
+      "status": "active"
     },
     {
       "id": "attack-4",
@@ -288,7 +303,8 @@
         "color": "#7DD3FC",
         "radius": 15
       },
-      "speed": 120.0
+      "speed": 120.0,
+      "status": "active"
     },
     {
       "id": "attack-5",
@@ -306,7 +322,8 @@
         "color": "#7DD3FC",
         "radius": 15
       },
-      "speed": 120.0
+      "speed": 120.0,
+      "status": "active"
     },
     {
       "id": "attack-6",
@@ -324,7 +341,8 @@
         "color": "#7DD3FC",
         "radius": 15
       },
-      "speed": 120.0
+      "speed": 120.0,
+      "status": "active"
     },
     {
       "id": "attack-7",
@@ -342,7 +360,8 @@
         "color": "#7DD3FC",
         "radius": 15
       },
-      "speed": 120.0
+      "speed": 120.0,
+      "status": "active"
     },
     {
       "id": "attack-8",
@@ -360,7 +379,8 @@
         "color": "#7DD3FC",
         "radius": 15
       },
-      "speed": 120.0
+      "speed": 120.0,
+      "status": "active"
     },
     {
       "id": "attack-9",
@@ -378,7 +398,8 @@
         "color": "#7DD3FC",
         "radius": 15
       },
-      "speed": 120.0
+      "speed": 120.0,
+      "status": "active"
     },
     {
       "id": "compute-1",
@@ -390,12 +411,13 @@
         410.50811161268626,
         503.23960394785627
       ],
-      "transmission_range": 420.0,
+      "transmission_range": 900.0,
       "render": {
         "shape": "diamond",
         "color": "#1E3A8A",
         "radius": 16
-      }
+      },
+      "status": "active"
     },
     {
       "id": "compute-2",
@@ -407,12 +429,13 @@
         412.40065243233477,
         722.091704446485
       ],
-      "transmission_range": 420.0,
+      "transmission_range": 900.0,
       "render": {
         "shape": "diamond",
         "color": "#1E3A8A",
         "radius": 16
-      }
+      },
+      "status": "active"
     },
     {
       "id": "compute-3",
@@ -424,12 +447,13 @@
         309.89032135730974,
         624.7870634302134
       ],
-      "transmission_range": 420.0,
+      "transmission_range": 900.0,
       "render": {
         "shape": "diamond",
         "color": "#1E3A8A",
         "radius": 16
-      }
+      },
+      "status": "active"
     },
     {
       "id": "recon-1",
@@ -448,7 +472,8 @@
         "radius": 13
       },
       "detection_radius": 220.0,
-      "speed": 95.0
+      "speed": 95.0,
+      "status": "active"
     },
     {
       "id": "recon-2",
@@ -467,7 +492,8 @@
         "radius": 13
       },
       "detection_radius": 220.0,
-      "speed": 95.0
+      "speed": 95.0,
+      "status": "active"
     },
     {
       "id": "recon-3",
@@ -486,7 +512,8 @@
         "radius": 13
       },
       "detection_radius": 220.0,
-      "speed": 95.0
+      "speed": 95.0,
+      "status": "active"
     },
     {
       "id": "recon-4",
@@ -505,7 +532,8 @@
         "radius": 13
       },
       "detection_radius": 220.0,
-      "speed": 95.0
+      "speed": 95.0,
+      "status": "active"
     },
     {
       "id": "soldier-13",
@@ -522,7 +550,8 @@
         "shape": "square",
         "color": "#8B5CF6",
         "radius": 14
-      }
+      },
+      "status": "active"
     }
   ],
   "enemies": [
