@@ -1,4 +1,12 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState } from 'react'
+
+const SOLDIER_ACCENTS = [
+  'bg-orange-500',
+  'bg-blue-500',
+  'bg-emerald-500',
+  'bg-amber-500',
+  'bg-rose-500'
+]
 
 /**
  * Soldier Selector Component
@@ -6,13 +14,16 @@ import React, { useState, useEffect } from 'react'
  * Provides UI for selecting which soldier operator to control.
  * Shows current soldier status and available commands.
  */
-function SoldierSelector({ activeSoldier, onSoldierChange, soldierStatus }) {
+function SoldierSelector({ activeSoldier, availableSoldiers = [], onSoldierChange, soldierStatus }) {
   const [showStatus, setShowStatus] = useState(false)
-  
-  const soldiers = [
-    { id: "soldier-1", label: "Soldier 1", color: "bg-orange-500" },
-    { id: "soldier-2", label: "Soldier 2", color: "bg-blue-500" }
-  ]
+
+  const soldiers = (availableSoldiers.length > 0 ? availableSoldiers : [
+    { id: 'soldier-1', label: 'Soldier 1' },
+    { id: 'soldier-2', label: 'Soldier 2' }
+  ]).map((soldier, index) => ({
+    ...soldier,
+    color: SOLDIER_ACCENTS[index % SOLDIER_ACCENTS.length]
+  }))
   
   const getStatusColor = (status) => {
     if (!status) return "text-gray-500"
@@ -28,7 +39,7 @@ function SoldierSelector({ activeSoldier, onSoldierChange, soldierStatus }) {
     return "✕"
   }
 
-  const activeSoldierLabel = soldiers.find((soldier) => soldier.id === activeSoldier)?.label || "Unknown Soldier"
+  const activeSoldierLabel = soldiers.find((soldier) => soldier.id === activeSoldier)?.label || 'Unknown Soldier'
 
   return (
     <div className="soldier-selector w-full bg-gray-900 border border-gray-700 rounded-lg p-4">
@@ -44,7 +55,7 @@ function SoldierSelector({ activeSoldier, onSoldierChange, soldierStatus }) {
 
       {/* Soldier Selection Buttons */}
       <div className="mb-4 flex flex-col gap-3 sm:flex-row">
-        {soldiers.map(soldier => (
+        {soldiers.map((soldier) => (
           <button
             key={soldier.id}
             onClick={() => onSoldierChange(soldier.id)}

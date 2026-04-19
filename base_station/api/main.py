@@ -23,7 +23,7 @@ from urllib import request as urllib_request
 from uuid import uuid4
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, File, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 import uvicorn
@@ -212,17 +212,133 @@ compute_drones = {
     "compute-2": ComputeDroneController(drone_id="compute-2", processor_capability=0.93),
 }
 
+DEFAULT_OPERATOR_ID = "soldier-1"
+operator_context = {
+    "active_operator": DEFAULT_OPERATOR_ID,
+    "updated_at": datetime.now().isoformat(),
+}
+
+
+def _dedupe_preserve_order(values: list[str]) -> list[str]:
+    deduped: list[str] = []
+    for value in values:
+        if value and value not in deduped:
+            deduped.append(value)
+    return deduped
+
+
+def _operator_node_ids_from_state(state: Dict | None = None) -> list[str]:
+    nodes = (state or {}).get("nodes") or []
+    operator_ids: list[str] = []
+
+    for node in nodes:
+        node_id = str(node.get("id") or "").strip()
+        if not node_id:
+            continue
+
+        role = str(node.get("role") or "").strip().lower()
+        node_type = str(node.get("type") or "").strip().lower()
+        if role == "operator-node" or node_type == "soldier" or node_id.startswith("soldier"):
+            operator_ids.append(node_id)
+
+    if not operator_ids:
+        operator_ids.extend(demo_soldiers.keys())
+
+    if not operator_ids:
+        operator_ids.append(DEFAULT_OPERATOR_ID)
+
+    return _dedupe_preserve_order(operator_ids)
+
+
+def _operator_from_transcript(transcribed_text: str, available_operators: list[str]) -> str | None:
+    normalized = (transcribed_text or "").strip().lower()
+    if not normalized:
+        return None
+
+    spoken_numbers = {
+        "1": "one",
+        "2": "two",
+        "3": "three",
+        "4": "four",
+        "5": "five",
+    }
+
+    for operator_id in available_operators:
+        suffix = operator_id.rsplit("-", 1)[-1]
+        phrases = {
+            operator_id.replace("-", " "),
+        }
+        if suffix.isdigit():
+            phrases.update({
+                f"operator {suffix}",
+                f"soldier {suffix}",
+            })
+            spoken_suffix = spoken_numbers.get(suffix)
+            if spoken_suffix:
+                phrases.update({
+                    f"operator {spoken_suffix}",
+                    f"soldier {spoken_suffix}",
+                })
+
+        if any(phrase in normalized for phrase in phrases):
+            return operator_id
+
+    return None
+
+
+def _operator_context_snapshot(state: Dict | None = None) -> Dict:
+    if state is None:
+        try:
+            state = get_swarm().get_state()
+        except Exception:
+            state = None
+
+    available_operators = _operator_node_ids_from_state(state)
+    active_operator = str(operator_context.get("active_operator") or DEFAULT_OPERATOR_ID)
+
+    if active_operator not in available_operators:
+        active_operator = available_operators[0]
+        operator_context["active_operator"] = active_operator
+        operator_context["updated_at"] = datetime.now().isoformat()
+
+    return {
+        "active_operator": active_operator,
+        "available_operators": available_operators,
+        "updated_at": operator_context.get("updated_at"),
+    }
+
+
+def _set_active_operator(operator_id: str, state: Dict | None = None) -> Dict:
+    requested_operator = str(operator_id or "").strip()
+    available_operators = _operator_node_ids_from_state(state)
+    if requested_operator not in available_operators:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Unknown operator node: {requested_operator or '<empty>'}. "
+                f"Available operators: {', '.join(available_operators)}"
+            ),
+        )
+
+    operator_context["active_operator"] = requested_operator
+    operator_context["updated_at"] = datetime.now().isoformat()
+    return _operator_context_snapshot(state)
+
 
 def _default_operator_origin(transcribed_text: str, payload: Dict | None = None) -> str:
     payload = payload or {}
-    origin = payload.get("origin") or payload.get("operator_node")
-    if origin:
+    context = _operator_context_snapshot()
+    available_operators = context["available_operators"]
+
+    origin = str(payload.get("origin") or payload.get("operator_node") or "").strip()
+    if origin in available_operators:
         return origin
 
-    normalized = transcribed_text.lower()
-    if any(token in normalized for token in {"operator two", "operator 2", "soldier two", "soldier 2"}):
-        return "soldier-2"
-    return "soldier-1"
+    transcript_operator = _operator_from_transcript(transcribed_text, available_operators)
+    if transcript_operator:
+        return transcript_operator
+
+    return context["active_operator"]
 
 
 def mock_parse_intent(payload: Dict) -> Dict:
@@ -293,11 +409,13 @@ def _pending_execute_payload(
 ) -> Dict:
     swarm = get_swarm()
     state = swarm.get_state()
+    context = _operator_context_snapshot(state)
     return {
         "event": event,
         "status": status,
         "message": message,
         "algorithm": state.get("algorithm", "gossip"),
+        "origin": scope_key,
         "target_location": _humanize_location(parsed_command.get("target_location") or parsed_command.get("avoid_location")),
         "nodes": state.get("nodes", []),
         "edges": state.get("edges", []),
@@ -312,6 +430,7 @@ def _pending_execute_payload(
             "target_location": parsed_command.get("target_location"),
         },
         "network_profile": state.get("network_profile", {}),
+        "operator_context": context,
         "timestamp": datetime.now().isoformat(),
     }
 
@@ -495,6 +614,7 @@ def _simulate_signal_animations(propagation_order: list, edges: list) -> list:
 def _build_lean_ui_event(consensus_result: Dict, transcribed_text: str, parsed_command: Dict | None, confirmation_text: str | None) -> Dict:
     """Build a lean response for WebSocket broadcast to React UI (minimal payload)."""
     active_nodes = _build_active_nodes(consensus_result)
+    context = _operator_context_snapshot()
     
     # Extract only essential node/edge info for visualization
     nodes = consensus_result.get("nodes", [])
@@ -543,6 +663,7 @@ def _build_lean_ui_event(consensus_result: Dict, transcribed_text: str, parsed_c
         "status": consensus_result.get("status", "propagating"),
         "message": "Command executing via swarm consensus protocol",
         "algorithm": consensus_result.get("algorithm"),
+        "origin": consensus_result.get("origin"),
         "scenario_info": consensus_result.get("scenario_info", {}),
         "target_location": consensus_result.get("target_location"),
         "target_x": consensus_result.get("target_x", 0),
@@ -566,6 +687,7 @@ def _build_lean_ui_event(consensus_result: Dict, transcribed_text: str, parsed_c
         "parsed_command": parsed_command,
         "pending_execute": {"present": False},
         "network_profile": consensus_result.get("network_profile", {}),
+        "operator_context": context,
         "timestamp": datetime.now().isoformat(),
     }
 
@@ -573,11 +695,13 @@ def _build_lean_ui_event(consensus_result: Dict, transcribed_text: str, parsed_c
 def _build_swarm_event(consensus_result: Dict, transcribed_text: str, parsed_command: Dict | None, confirmation_text: str | None) -> Dict:
     """Build full response for REST API (includes all details for logging/debugging)."""
     search_state = consensus_result.get("search_state", {})
+    context = _operator_context_snapshot()
     return {
         "event": "gossip_update",
         "status": consensus_result.get("status", "propagating"),
         "message": "Command executing via swarm consensus protocol",
         "algorithm": consensus_result.get("algorithm"),
+        "origin": consensus_result.get("origin"),
         "scenario_info": consensus_result.get("scenario_info", {}),
         "control_node": search_state.get("control_node"),
         "target_location": consensus_result.get("target_location"),
@@ -597,16 +721,19 @@ def _build_swarm_event(consensus_result: Dict, transcribed_text: str, parsed_com
         "enemies": consensus_result.get("enemies", []),
         "pending_execute": {"present": False},
         "network_profile": consensus_result.get("network_profile", {}),
+        "operator_context": context,
         "events": consensus_result.get("events", []),
         "timestamp": datetime.now().isoformat(),
     }
 
 
 def _build_state_snapshot_message(state: Dict, event_name: str = "state_update") -> Dict:
+    context = _operator_context_snapshot(state)
     return {
         "event": event_name,
         "status": state.get("status", "idle"),
         "algorithm": state.get("algorithm", "gossip"),
+        "origin": state.get("origin"),
         "scenario_info": state.get("scenario_info", {}),
         "nodes": state.get("nodes", []),
         "edges": state.get("edges", []),
@@ -621,6 +748,7 @@ def _build_state_snapshot_message(state: Dict, event_name: str = "state_update")
         "structures": state.get("structures", []),
         "special_entities": state.get("special_entities", []),
         "events": state.get("events", []),
+        "operator_context": context,
         "timestamp": datetime.now().isoformat(),
     }
 
@@ -1103,7 +1231,11 @@ async def voice_command(payload: Dict):
 
 
 @app.post("/api/transcribe-command")
-async def transcribe_command(audio: UploadFile = File(...)):
+async def transcribe_command(
+    audio: UploadFile = File(...),
+    origin: str | None = Form(None),
+    operator_node: str | None = Form(None),
+):
     """Process recorded microphone audio from the React UI."""
     audio_bytes = await audio.read()
     if not audio_bytes:
@@ -1122,7 +1254,11 @@ async def transcribe_command(audio: UploadFile = File(...)):
 
     transcribed_text = command_result["transcribed_text"]
     parsed_command = command_result["parsed_command"]
-    swarm_intent = _to_swarm_intent(parsed_command, transcribed_text)
+    payload = {
+        "origin": origin,
+        "operator_node": operator_node,
+    }
+    swarm_intent = _to_swarm_intent(parsed_command, transcribed_text, payload)
     return await _dispatch_swarm_command(transcribed_text, swarm_intent, parsed_command)
 
 
@@ -1131,6 +1267,7 @@ async def get_swarm_state():
     """Fetch the current state of the swarm."""
     swarm = get_swarm()
     state = swarm.get_state()
+    context = _operator_context_snapshot(state)
 
     return {
         "scenario_info": state.get("scenario_info", {}),
@@ -1143,6 +1280,7 @@ async def get_swarm_state():
         "target_location": state.get("target_location", "Grid Alpha"),
         "target_x": state.get("target_x", 0),
         "target_y": state.get("target_y", 0),
+        "origin": state.get("origin"),
         "control_node": state.get("search_state", {}).get("control_node"),
         "protocol": state.get("protocol", {}),
         "delivery_summary": state.get("delivery_summary", {}),
@@ -1162,8 +1300,29 @@ async def get_swarm_state():
         "structures": state.get("structures", []),
         "special_entities": state.get("special_entities", []),
         "events": state.get("events", []),
+        "operator_context": context,
         "timestamp": state.get("timestamp", datetime.now().isoformat()),
     }
+
+
+@app.get("/api/operator-context")
+async def get_operator_context():
+    """Return the currently selected operator node for shared UI and Jetson routing."""
+    swarm = get_swarm()
+    return _operator_context_snapshot(swarm.get_state())
+
+
+@app.put("/api/operator-context")
+async def update_operator_context(payload: Dict):
+    """Update the active operator node used by browser and headless listeners."""
+    swarm = get_swarm()
+    context = _set_active_operator(
+        payload.get("active_operator") or payload.get("operator_node"),
+        swarm.get_state(),
+    )
+    snapshot = await _broadcast_state_snapshot(swarm)
+    snapshot["message"] = f"Active operator set to {context['active_operator']}"
+    return snapshot
 
 
 @app.get("/api/scenarios")

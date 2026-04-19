@@ -120,6 +120,7 @@ class JetsonSerialPTTListener:
             "JARVIS_LISTENER_API_URL",
             "http://127.0.0.1:8000/api/transcribe-command",
         ).strip()
+        self.operator_node = os.getenv("JARVIS_OPERATOR_NODE", "").strip()
 
         self.serial_port = os.getenv("JARVIS_SERIAL_PORT", "").strip()
         self.serial_baud = int(os.getenv("JARVIS_SERIAL_BAUD", 115200))
@@ -183,6 +184,10 @@ class JetsonSerialPTTListener:
 
         print("[PTT] Serial button listener online")
         print(f"[PTT] Posting commands to {self.api_url}")
+        if self.operator_node:
+            print(f"[PTT] Operator node override: {self.operator_node}")
+        else:
+            print("[PTT] Operator node follows active simulation selection")
         print(
             "[PTT] Waiting for ESP32 on "
             f"{self._serial.port} @ {self.serial_baud} baud"
@@ -647,9 +652,16 @@ class JetsonSerialPTTListener:
 
     def _submit_command(self, wav_bytes: bytes) -> None:
         try:
+            form_data = {}
+            if self.operator_node:
+                form_data = {
+                    "origin": self.operator_node,
+                    "operator_node": self.operator_node,
+                }
             response = self._session.post(
                 self.api_url,
                 files={"audio": ("command.wav", wav_bytes, "audio/wav")},
+                data=form_data,
                 timeout=self.api_timeout,
             )
             response.raise_for_status()
@@ -665,8 +677,10 @@ class JetsonSerialPTTListener:
         target = parsed.get("target_location") or parsed.get("avoid_location") or "NONE"
         status = payload.get("status", "unknown")
         execution_state = parsed.get("execution_state", "NONE")
+        origin = payload.get("origin") or self.operator_node or "unknown"
 
         print(f"[PTT] Transcript: {transcript}")
+        print(f"[PTT] Origin: {origin}")
         print(f"[PTT] Status: {status} execution_state={execution_state}")
         print(f"[PTT] Parsed goal: {goal} target={target}")
         self._write_serial(f"RESULT {goal} {target}")

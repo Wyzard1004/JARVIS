@@ -11,7 +11,7 @@ import DroneStatusCard from './components/DroneStatusCard'
 import PushToTalkButton from './components/PushToTalkButton'
 import StatusPanel from './components/StatusPanel'
 import SoldierSelector from './components/SoldierSelector'
-import { getEntityDisplayLabel } from './lib/displayNames'
+import { getEntityDisplayLabel, sanitizeUnitIdentifiers } from './lib/displayNames'
 
 const MAP_MODE_OPTIONS = [
   {
@@ -31,6 +31,12 @@ const DEFAULT_MAP_OVERLAY = {
   asset_path: null,
   opacity: 0.72,
   visible: false
+}
+
+const DEFAULT_OPERATOR_CONTEXT = {
+  active_operator: 'soldier-1',
+  available_operators: ['soldier-1', 'soldier-2'],
+  updated_at: null
 }
 
 const EDITOR_TOOL_OPTIONS = [
@@ -156,6 +162,13 @@ const normalizeSwarmState = (state) => {
 
   return {
     ...state,
+    operator_context: {
+      ...DEFAULT_OPERATOR_CONTEXT,
+      ...(state.operator_context || {}),
+      available_operators: Array.isArray(state.operator_context?.available_operators)
+        ? state.operator_context.available_operators
+        : DEFAULT_OPERATOR_CONTEXT.available_operators
+    },
     map_overlay: {
       ...DEFAULT_MAP_OVERLAY,
       ...(state.map_overlay || {})
@@ -189,6 +202,24 @@ const getSelectedMapEntityRecord = (state, selection) => {
 const getSelectedDroneRecord = (state, droneId) => {
   if (!state || !droneId) return null
   return (state.nodes || []).find((node) => node.id === droneId) || null
+}
+
+const buildAvailableSoldiers = (state) => {
+  const operatorIds = Array.isArray(state?.operator_context?.available_operators)
+    ? state.operator_context.available_operators
+    : []
+
+  const fallbackIds = ['soldier-1', 'soldier-2']
+  const soldierIds = operatorIds.length > 0 ? operatorIds : fallbackIds
+
+  return soldierIds.map((soldierId, index) => {
+    const nodeRecord = getSelectedDroneRecord(state, soldierId)
+    return {
+      id: soldierId,
+      label: nodeRecord ? getEntityDisplayLabel(nodeRecord) : sanitizeUnitIdentifiers(soldierId),
+      index
+    }
+  })
 }
 
 const getNextNodeId = (nodes, prefix) => {
@@ -230,15 +261,21 @@ function App() {
   const entityIdSequenceRef = useRef(1)
   const activeScenarioKeyRef = useRef('')
   const scenarioNameDirtyRef = useRef(false)
+  const scenarioSelectionDirtyRef = useRef(false)
   const MAX_RECONNECT_ATTEMPTS = 5
   const RECONNECT_DELAY = 2000
 
-  const syncScenarioNameDraft = (scenarioInfo, options = {}) => {
+  const syncScenarioDrafts = (scenarioInfo, options = {}) => {
     const nextScenarioKey = scenarioInfo?.relative_path || ''
     const nextScenarioName = scenarioInfo?.name || 'Blank Workspace'
     const scenarioChanged = activeScenarioKeyRef.current !== nextScenarioKey
 
     activeScenarioKeyRef.current = nextScenarioKey
+
+    if (options.force || scenarioChanged || !scenarioSelectionDirtyRef.current) {
+      setSelectedScenarioKey(nextScenarioKey)
+      scenarioSelectionDirtyRef.current = false
+    }
 
     if (options.force || scenarioChanged || !scenarioNameDirtyRef.current) {
       setScenarioName(nextScenarioName)
@@ -252,8 +289,10 @@ function App() {
     if (!normalized) return null
     setSwarmState(normalized)
     setEvents(normalized.events || [])
-    setSelectedScenarioKey(normalized.scenario_info?.relative_path || '')
-    syncScenarioNameDraft(normalized.scenario_info, options)
+    if (normalized.operator_context?.active_operator) {
+      setActiveSoldier(normalized.operator_context.active_operator)
+    }
+    syncScenarioDrafts(normalized.scenario_info, options)
     return normalized
   }
 
@@ -267,8 +306,7 @@ function App() {
         throw new Error(result.detail || result.message || 'Scenario list request failed')
       }
       setScenarioCatalog(Array.isArray(result.scenarios) ? result.scenarios : [])
-      setSelectedScenarioKey(result.active_scenario?.relative_path || '')
-      syncScenarioNameDraft(result.active_scenario)
+      syncScenarioDrafts(result.active_scenario)
     } catch (error) {
       console.error('[App] Failed to fetch scenario catalog:', error)
     }
@@ -309,6 +347,34 @@ function App() {
       ...updates
     }
     await pushEditorPayload(payload, 'Overlay updated')
+  }
+
+  const fetchSoldierStatus = async (soldierId) => {
+    if (!soldierId) {
+      setSoldierStatus(null)
+      return
+    }
+
+    try {
+      const response = await fetch(`/api/soldier/${soldierId}/status`)
+      const data = await response.json()
+      if (!response.ok) {
+        throw new Error(data.detail || data.message || 'Soldier status request failed')
+      }
+
+      setSoldierStatus({
+        status: 'online',
+        pending_commands: data.pending_commands || 0,
+        last_mission: data.last_mission_id || null
+      })
+    } catch (error) {
+      console.error('[App] Failed to fetch soldier status:', error)
+      setSoldierStatus({
+        status: 'offline',
+        pending_commands: 0,
+        last_mission: null
+      })
+    }
   }
 
   useEffect(() => {
@@ -362,8 +428,13 @@ function App() {
           ) {
             console.log('[App] Updating swarm state from command response')
             applyIncomingState(data)
+            if (data.origin) {
+              setSelectedDrone(data.origin)
+              setSelectedMapEntity(null)
+            }
             setCurrentCommand({
               timestamp: new Date().toLocaleTimeString(),
+              origin: data.origin || data.operator_context?.active_operator || activeSoldier,
               target: data.target_location || 'Unknown',
               status: data.status || 'processing',
               nodes: data.active_nodes?.length || data.nodes?.length || 0,
@@ -453,16 +524,27 @@ function App() {
     }
   }, [swarmState])
 
+  useEffect(() => {
+    void fetchSoldierStatus(activeSoldier)
+  }, [activeSoldier])
+
   const handleVoiceCommand = async (transcript) => {
     try {
       let response
       let historyCommand = typeof transcript === 'string' ? transcript : 'Processing audio...'
+      const originPayload = {
+        origin: activeSoldier,
+        operator_node: activeSoldier
+      }
 
       if (typeof transcript === 'string') {
         response = await fetch('/api/voice-command', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ transcribed_text: transcript })
+          body: JSON.stringify({
+            transcribed_text: transcript,
+            ...originPayload
+          })
         })
       } else {
         const formData = new FormData()
@@ -473,6 +555,8 @@ function App() {
             : 'webm'
 
         formData.append('audio', transcript.audioBlob, `recording.${extension}`)
+        formData.append('origin', activeSoldier)
+        formData.append('operator_node', activeSoldier)
         response = await fetch('/api/transcribe-command', {
           method: 'POST',
           body: formData
@@ -489,6 +573,7 @@ function App() {
 
       setCommandHistory((previous) => [...previous, {
         timestamp: new Date().toISOString(),
+        origin: result.origin || activeSoldier,
         command: transcriptText,
         status: result.status,
         goal: result.parsed_command?.goal || 'UNKNOWN',
@@ -499,9 +584,15 @@ function App() {
         applyIncomingState(result)
       }
 
+      if (result.origin) {
+        setSelectedDrone(result.origin)
+        setSelectedMapEntity(null)
+      }
+
       if (result.status) {
         setCurrentCommand({
           timestamp: new Date().toLocaleTimeString(),
+          origin: result.origin || activeSoldier,
           target: result.target_location || 'Unknown',
           status: result.status || 'processing',
           nodes: result.active_nodes?.length || result.nodes?.length || 0,
@@ -521,19 +612,22 @@ function App() {
   }
 
   const handleSoldierChange = async (soldierId) => {
+    const previousSoldier = activeSoldier
     setActiveSoldier(soldierId)
     try {
-      const response = await fetch(`/api/soldier/${soldierId}/status`)
-      if (response.ok) {
-        const data = await response.json()
-        setSoldierStatus({
-          status: 'online',
-          pending_commands: data.pending_commands || 0,
-          last_mission: data.last_mission_id || null
-        })
+      const response = await fetch('/api/operator-context', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ active_operator: soldierId })
+      })
+      const data = await response.json()
+      if (!response.ok) {
+        throw new Error(data.detail || data.message || 'Operator context update failed')
       }
+      applyIncomingState(data)
     } catch (error) {
-      console.error('[App] Failed to fetch soldier status:', error)
+      console.error('[App] Failed to update operator context:', error)
+      setActiveSoldier(previousSoldier)
     }
   }
 
@@ -746,6 +840,11 @@ function App() {
 
   const selectedMapRecord = getSelectedMapEntityRecord(swarmState, selectedMapEntity)
   const selectedDroneRecord = getSelectedDroneRecord(swarmState, selectedDrone)
+  const availableSoldiers = buildAvailableSoldiers(swarmState)
+  const activeSoldierRecord = getSelectedDroneRecord(swarmState, activeSoldier)
+  const activeSoldierLabel = activeSoldierRecord
+    ? getEntityDisplayLabel(activeSoldierRecord)
+    : sanitizeUnitIdentifiers(activeSoldier)
   const overlayState = swarmState?.map_overlay || DEFAULT_MAP_OVERLAY
   const activeScenarioInfo = swarmState?.scenario_info || null
   const saveButtonLabel = activeScenarioInfo?.relative_path === 'swarm_initial_state.json'
@@ -783,7 +882,13 @@ function App() {
                   Awaiting Execute
                 </p>
               )}
-              <div className="grid gap-4 md:grid-cols-3 md:gap-8">
+              <div className="grid gap-4 md:grid-cols-4 md:gap-8">
+                <div>
+                  <p className="text-xs text-gray-300 uppercase">Origin Soldier</p>
+                  <p className="text-xl font-bold text-white">
+                    {sanitizeUnitIdentifiers(currentCommand.origin || 'unknown')}
+                  </p>
+                </div>
                 <div>
                   <p className="text-xs text-gray-300 uppercase">Status</p>
                   <p className="text-xl font-bold text-white capitalize">
@@ -889,7 +994,10 @@ function App() {
                     <div className="mt-3 flex flex-col gap-2 sm:flex-row">
                       <select
                         value={selectedScenarioKey}
-                        onChange={(event) => setSelectedScenarioKey(event.target.value)}
+                        onChange={(event) => {
+                          setSelectedScenarioKey(event.target.value)
+                          scenarioSelectionDirtyRef.current = true
+                        }}
                         disabled={scenarioBusy}
                         className="min-w-0 flex-1 rounded border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100"
                       >
@@ -1091,6 +1199,7 @@ function App() {
         <div className="min-w-0 space-y-4">
           <SoldierSelector
             activeSoldier={activeSoldier}
+            availableSoldiers={availableSoldiers}
             onSoldierChange={handleSoldierChange}
             soldierStatus={soldierStatus}
           />
@@ -1123,7 +1232,7 @@ function App() {
 
           <div className="bg-gray-800 rounded border border-gray-700 p-4">
             <h3 className="text-lg font-bold mb-4">🎤 Voice Command</h3>
-            <PushToTalkButton onCommand={handleVoiceCommand} />
+            <PushToTalkButton onCommand={handleVoiceCommand} activeSoldierLabel={activeSoldierLabel} />
           </div>
 
           <div className="bg-gray-800 rounded border border-gray-700 p-4 min-h-[12rem] max-h-[20rem] overflow-y-auto">
@@ -1134,6 +1243,9 @@ function App() {
               <div className="space-y-2">
                 {commandHistory.slice(-5).map((cmd, index) => (
                   <div key={`${cmd.timestamp}-${index}`} className="bg-gray-900 p-2 rounded text-xs border-l-2 border-yellow-500">
+                    <p className="text-[10px] uppercase tracking-wide text-amber-300">
+                      {sanitizeUnitIdentifiers(cmd.origin || activeSoldier)}
+                    </p>
                     <p className="font-mono text-gray-300">{cmd.command.substring(0, 40)}...</p>
                     <p className="text-xs text-blue-400">{cmd.goal}</p>
                     <p className="text-[10px] text-gray-500">{cmd.status} / {cmd.executionState}</p>

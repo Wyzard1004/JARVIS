@@ -9,7 +9,7 @@ import React, { useState, useRef } from 'react'
  * 3. Gossip protocol execution
  */
 
-function PushToTalkButton({ onCommand }) {
+function PushToTalkButton({ onCommand, activeSoldierLabel = 'Soldier 1' }) {
   const [isListening, setIsListening] = useState(false)
   const [transcript, setTranscript] = useState('')
   const mediaRecorder = useRef(null)
@@ -64,6 +64,9 @@ function PushToTalkButton({ onCommand }) {
 
   return (
     <div className="flex flex-col gap-3">
+      <div className="rounded border border-cyan-500/30 bg-cyan-500/10 px-3 py-2 text-xs text-cyan-100">
+        Transmitting as <span className="font-semibold">{activeSoldierLabel}</span>
+      </div>
       <button
         onClick={isListening ? stopListening : startListening}
         className={`py-3 px-4 rounded font-bold text-white transition ${

@@ -55,6 +55,7 @@ class JetsonWakeListener:
             "JARVIS_LISTENER_API_URL",
             "http://127.0.0.1:8000/api/transcribe-command",
         ).strip()
+        self.operator_node = os.getenv("JARVIS_OPERATOR_NODE", "").strip()
         self.audio_device_name = os.getenv("JARVIS_AUDIO_DEVICE_NAME", "").strip().lower()
         self.audio_device_index = self._parse_int_env("JARVIS_AUDIO_DEVICE_INDEX")
         self.audio_device_rate = self._parse_int_env("JARVIS_AUDIO_DEVICE_RATE")
@@ -116,6 +117,10 @@ class JetsonWakeListener:
         print("[LISTENER] Jetson wake listener online")
         print(f"[LISTENER] Wake labels: {', '.join(self.wakeword_labels)}")
         print(f"[LISTENER] Posting commands to {self.api_url}")
+        if self.operator_node:
+            print(f"[LISTENER] Operator node override: {self.operator_node}")
+        else:
+            print("[LISTENER] Operator node follows active simulation selection")
         if self._selected_device_name:
             print(
                 "[LISTENER] Using audio input: "
@@ -264,9 +269,16 @@ class JetsonWakeListener:
 
     def _submit_command(self, wav_bytes: bytes) -> None:
         try:
+            form_data = {}
+            if self.operator_node:
+                form_data = {
+                    "origin": self.operator_node,
+                    "operator_node": self.operator_node,
+                }
             response = self._session.post(
                 self.api_url,
                 files={"audio": ("command.wav", wav_bytes, "audio/wav")},
+                data=form_data,
                 timeout=self.api_timeout,
             )
             response.raise_for_status()
@@ -281,8 +293,10 @@ class JetsonWakeListener:
         target = parsed.get("target_location") or parsed.get("avoid_location")
         status = payload.get("status", "unknown")
         execution_state = parsed.get("execution_state", "NONE")
+        origin = payload.get("origin") or self.operator_node or "unknown"
 
         print(f"[LISTENER] Transcript: {transcript}")
+        print(f"[LISTENER] Origin: {origin}")
         print(f"[LISTENER] Status: {status} execution_state={execution_state}")
         print(f"[LISTENER] Parsed goal: {goal} target={target}")
 
