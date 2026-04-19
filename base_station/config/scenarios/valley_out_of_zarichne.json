@@ -1,14 +1,14 @@
 {
   "scenario": "Valley Out of Zarichne",
   "suggested_commands": [
-    "jarvis scan the northern ridgeline",
-    "jarvis move to the valley mouth",
-    "jarvis avoid the main road kill zone"
+    "JARVIS Recon Patrol Echo 1 to Echo 8",
+    "JARVIS Attack Echo 6",
+    "Jarvis Attack Echo 8"
   ],
   "timestamp_ms": 0,
   "coordinate_space_size": 1000,
   "map_overlay": {
-    "asset_url": "http://100.71.205.85:8000/scenario-assets/overlay-88802b175eaf4a9cb67f0633111d9680.png",
+    "asset_url": "/scenario-assets/overlay-88802b175eaf4a9cb67f0633111d9680.png",
     "asset_path": "scenario_assets/overlay-88802b175eaf4a9cb67f0633111d9680.png",
     "opacity": 0.72,
     "visible": true
