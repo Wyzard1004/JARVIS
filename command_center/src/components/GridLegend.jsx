@@ -7,6 +7,7 @@
  */
 
 import React from 'react'
+import { getEntityDisplayLabel, getEntityTypeLabel } from '../lib/displayNames'
 import { MAP_MARKER_LEGEND_ITEMS, NATO_UNIT_LEGEND_ITEMS } from '../lib/natoSymbols'
 
 function GridLegend({ activeDrones = [], mapMode = 'nato' }) {
@@ -127,12 +128,12 @@ function GridLegend({ activeDrones = [], mapMode = 'nato' }) {
         <>
           <hr className="border-gray-600" />
           <div>
-            <h3 className="font-bold text-sm mb-2 text-gray-100">Active Drones ({activeDrones.length})</h3>
+            <h3 className="font-bold text-sm mb-2 text-gray-100">Active Friendly Units ({activeDrones.length})</h3>
             <div className="text-xs space-y-1 max-h-32 overflow-y-auto">
               {activeDrones.map((drone) => (
-                <div key={drone.id} className="font-mono text-gray-300">
-                  <span className="font-bold">{drone.id}</span>
-                  <span className="text-xs ml-2 capitalize">{drone.type || 'drone'}</span>
+                <div key={drone.id} className="text-gray-300">
+                  <span className="font-bold">{getEntityDisplayLabel(drone)}</span>
+                  <span className="text-xs ml-2 text-gray-400">{getEntityTypeLabel(drone)}</span>
                 </div>
               ))}
             </div>

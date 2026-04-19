@@ -7,6 +7,7 @@
  */
 
 import React, { useEffect, useRef } from 'react'
+import { formatLabelText, sanitizeUnitIdentifiers } from '../lib/displayNames'
 
 const SEVERITY_COLORS = {
   info: 'bg-blue-900 text-blue-200 border-blue-700',
@@ -55,6 +56,11 @@ function EventConsole({ events = [], maxVisible = 20 }) {
     return SEVERITY_BADGE[severity] || SEVERITY_BADGE.info
   }
 
+  const getEntityTypeLabel = (entityType) => {
+    if (!entityType) return null
+    return formatLabelText(entityType)
+  }
+
   // Show only most recent events
   const visibleEvents = events.slice(-maxVisible)
 
@@ -87,11 +93,11 @@ function EventConsole({ events = [], maxVisible = 20 }) {
                       </span>
                     </div>
                     <div className="mt-1 break-words">
-                      {event.message}
+                      {sanitizeUnitIdentifiers(event.message)}
                     </div>
-                    {event.entity_id && (
+                    {event.entity_type && (
                       <div className="text-xs opacity-75 mt-1">
-                        Entity: {event.entity_id} ({event.entity_type})
+                        Subject: {getEntityTypeLabel(event.entity_type)}
                       </div>
                     )}
                   </div>

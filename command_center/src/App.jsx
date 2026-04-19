@@ -11,6 +11,7 @@ import DroneStatusCard from './components/DroneStatusCard'
 import PushToTalkButton from './components/PushToTalkButton'
 import StatusPanel from './components/StatusPanel'
 import SoldierSelector from './components/SoldierSelector'
+import { getEntityDisplayLabel } from './lib/displayNames'
 
 const MAP_MODE_OPTIONS = [
   {
@@ -35,6 +36,10 @@ const DEFAULT_MAP_OVERLAY = {
 const EDITOR_TOOL_OPTIONS = [
   { id: 'select', label: 'Select', description: 'Select and move placed objects' },
   { id: 'building', label: 'Building', description: 'Drag rectangle footprints' },
+  { id: 'friendly-soldier', label: 'Friendly Soldier', description: 'Place allied operator / infantry' },
+  { id: 'friendly-compute', label: 'Friendly Compute', description: 'Place allied compute drone' },
+  { id: 'friendly-recon', label: 'Friendly Recon', description: 'Place allied recon drone' },
+  { id: 'friendly-attack', label: 'Friendly Attack', description: 'Place allied attack drone' },
   { id: 'enemy-infantry', label: 'Infantry', description: 'Place hostile infantry' },
   { id: 'enemy-tank', label: 'Tank', description: 'Place hostile armor' },
   { id: 'enemy-vehicle', label: 'Vehicle', description: 'Place hostile vehicle' },
@@ -42,6 +47,64 @@ const EDITOR_TOOL_OPTIONS = [
   { id: 'poi-cache', label: 'Supply Cache', description: 'Place POI' },
   { id: 'poi-checkpoint', label: 'Checkpoint', description: 'Place POI' }
 ]
+
+const FRIENDLY_FORCE_TOOL_CONFIG = {
+  'friendly-soldier': {
+    nodeType: 'soldier',
+    idPrefix: 'soldier',
+    role: 'operator-node',
+    labelPrefix: 'Soldier Operator',
+    defaultBehavior: 'lurk',
+    transmissionRange: 190,
+    render: {
+      shape: 'square',
+      color: '#8B5CF6',
+      radius: 14
+    }
+  },
+  'friendly-compute': {
+    nodeType: 'compute',
+    idPrefix: 'compute',
+    role: 'compute-drone',
+    labelPrefix: 'Compute Drone',
+    defaultBehavior: 'lurk',
+    transmissionRange: 420,
+    render: {
+      shape: 'diamond',
+      color: '#1E3A8A',
+      radius: 16
+    }
+  },
+  'friendly-recon': {
+    nodeType: 'recon',
+    idPrefix: 'recon',
+    role: 'recon-drone',
+    labelPrefix: 'Recon Drone',
+    defaultBehavior: 'lurk',
+    transmissionRange: 170,
+    detectionRadius: 220,
+    speed: 95,
+    render: {
+      shape: 'triangle',
+      color: '#7DD3FC',
+      radius: 13
+    }
+  },
+  'friendly-attack': {
+    nodeType: 'attack',
+    idPrefix: 'attack',
+    role: 'attack-drone',
+    labelPrefix: 'Attack Drone',
+    defaultBehavior: 'lurk',
+    transmissionRange: 160,
+    speed: 120,
+    render: {
+      shape: 'star',
+      color: '#7DD3FC',
+      radius: 15
+    }
+  }
+}
 
 const POINT_TOOL_CONFIG = {
   'enemy-infantry': {
@@ -128,6 +191,16 @@ const getSelectedDroneRecord = (state, droneId) => {
   return (state.nodes || []).find((node) => node.id === droneId) || null
 }
 
+const getNextNodeId = (nodes, prefix) => {
+  const pattern = new RegExp(`^${prefix}-(\\d+)$`)
+  const nextIndex = (nodes || []).reduce((highest, node) => {
+    const match = pattern.exec(String(node?.id || ''))
+    if (!match) return highest
+    return Math.max(highest, Number(match[1]) || 0)
+  }, 0) + 1
+  return `${prefix}-${nextIndex}`
+}
+
 function App() {
   const [swarmState, setSwarmState] = useState(null)
   const [scenarioCatalog, setScenarioCatalog] = useState([])
@@ -156,6 +229,7 @@ function App() {
   const overlayInputRef = useRef(null)
   const entityIdSequenceRef = useRef(1)
   const activeScenarioKeyRef = useRef('')
+  const scenarioNameDirtyRef = useRef(false)
   const MAX_RECONNECT_ATTEMPTS = 5
   const RECONNECT_DELAY = 2000
 
@@ -166,8 +240,9 @@ function App() {
 
     activeScenarioKeyRef.current = nextScenarioKey
 
-    if (options.force || scenarioChanged || !scenarioNameDirty) {
+    if (options.force || scenarioChanged || !scenarioNameDirtyRef.current) {
       setScenarioName(nextScenarioName)
+      scenarioNameDirtyRef.current = false
       setScenarioNameDirty(false)
     }
   }
@@ -495,6 +570,34 @@ function App() {
       return
     }
 
+    const friendlyForce = FRIENDLY_FORCE_TOOL_CONFIG[descriptor.tool]
+    if (friendlyForce) {
+      const typedNodes = payload.drones.filter((node) => node.type === friendlyForce.nodeType)
+      const nodeRecord = {
+        id: getNextNodeId(payload.drones, friendlyForce.idPrefix),
+        label: `${friendlyForce.labelPrefix} ${typedNodes.length + 1}`,
+        type: friendlyForce.nodeType,
+        role: friendlyForce.role,
+        behavior: friendlyForce.defaultBehavior,
+        position: descriptor.position,
+        transmission_range: friendlyForce.transmissionRange,
+        render: friendlyForce.render
+      }
+
+      if (typeof friendlyForce.detectionRadius === 'number') {
+        nodeRecord.detection_radius = friendlyForce.detectionRadius
+      }
+      if (typeof friendlyForce.speed === 'number') {
+        nodeRecord.speed = friendlyForce.speed
+      }
+
+      payload.drones.push(nodeRecord)
+      setSelectedDrone(nodeRecord.id)
+      setSelectedMapEntity(null)
+      await pushEditorPayload(payload, `${friendlyForce.labelPrefix} placed`)
+      return
+    }
+
     const pointTool = POINT_TOOL_CONFIG[descriptor.tool]
     if (!pointTool) return
 
@@ -817,6 +920,7 @@ function App() {
                         value={scenarioName}
                         onChange={(event) => {
                           setScenarioName(event.target.value)
+                          scenarioNameDirtyRef.current = true
                           setScenarioNameDirty(true)
                         }}
                         className="w-full rounded border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-100"
@@ -1003,7 +1107,7 @@ function App() {
           {selectedMapRecord && (
             <div className="bg-gray-800 rounded border border-gray-700 p-4 space-y-2">
               <div className="text-xs uppercase tracking-[0.18em] text-gray-400">Selected Map Object</div>
-              <div className="text-lg font-bold text-gray-100">{selectedMapRecord.label || selectedMapRecord.id}</div>
+              <div className="text-lg font-bold text-gray-100">{getEntityDisplayLabel(selectedMapRecord)}</div>
               <div className="text-sm text-gray-300 capitalize">
                 {(selectedMapEntity?.kind || '').replace(/_/g, ' ')} / {(selectedMapRecord.subtype || selectedMapRecord.type || 'unknown').replace(/_/g, ' ')}
               </div>
