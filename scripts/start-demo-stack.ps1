@@ -39,8 +39,8 @@ $backendRemote = 'cd ~/JARVIS_repo/base_station && source .venv/bin/activate && 
 $listenerRemote = 'cd ~/JARVIS_repo/base_station && source .venv/bin/activate && set -a && source .env && set +a && while true; do python headless/serial_ptt_listener.py; echo "[AUTO] Listener exited; retrying in 2s"; sleep 2; done'
 $frontendCommand = "Set-Location '$commandCenterDir'; npm run dev"
 
-$backendCommand = "ssh -t $sshTarget `"$backendRemote`""
-$listenerCommand = "ssh -t $sshTarget `"$listenerRemote`""
+$backendCommand = "ssh -t $sshTarget '$backendRemote'"
+$listenerCommand = "ssh -t $sshTarget '$listenerRemote'"
 
 Write-Host "[launcher] Opening Jetson backend terminal..." -ForegroundColor Cyan
 Start-TerminalWindow -Title "JARVIS Jetson Backend" -Command $backendCommand
