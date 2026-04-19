@@ -36,6 +36,7 @@ enum RelayPacketKind : uint8_t {
   RELAY_KIND_COMMAND_CANCEL = 3,
   RELAY_KIND_ACK = 4,
   RELAY_KIND_STATUS = 5,
+  RELAY_KIND_COMMAND_DIRECT = 6,
 };
 
 enum RelayGoalCode : uint8_t {
@@ -75,6 +76,7 @@ enum RelayStatusCode : uint8_t {
   RELAY_STATUS_RECEIVED_CANCEL = 4,
   RELAY_STATUS_FORWARDED = 5,
   RELAY_STATUS_ERROR = 6,
+  RELAY_STATUS_RECEIVED_COMMAND = 7,
 };
 
 static constexpr uint8_t RELAY_FLAG_ACK_REQUIRED = 0x01;
@@ -130,6 +132,8 @@ inline const char* relayStatusName(uint8_t status_code) {
       return "RECEIVED_EXECUTE";
     case RELAY_STATUS_RECEIVED_CANCEL:
       return "RECEIVED_CANCEL";
+    case RELAY_STATUS_RECEIVED_COMMAND:
+      return "RECEIVED_COMMAND";
     case RELAY_STATUS_FORWARDED:
       return "FORWARDED";
     case RELAY_STATUS_ERROR:

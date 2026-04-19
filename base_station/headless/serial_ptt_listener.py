@@ -684,15 +684,24 @@ class JetsonSerialPTTListener:
         goal = parsed.get("goal", "UNKNOWN")
         target = parsed.get("target_location") or parsed.get("avoid_location") or "NONE"
         status = payload.get("status", "unknown")
+        message = (payload.get("message") or "").strip()
         execution_state = parsed.get("execution_state", "NONE")
-        origin = payload.get("origin") or self.operator_node or "unknown"
         trace_id = payload.get("trace_id") or "unknown"
         command_id = payload.get("command_id") or "unknown"
+        operator_context = payload.get("operator_context") or {}
+        origin = (
+            payload.get("origin")
+            or operator_context.get("active_operator")
+            or self.operator_node
+            or "unknown"
+        )
 
         print(f"[PTT] Transcript: {transcript}")
         print(f"[PTT] Trace: {trace_id} command_id={command_id}")
         print(f"[PTT] Origin: {origin}")
         print(f"[PTT] Status: {status} execution_state={execution_state}")
+        if message:
+            print(f"[PTT] Message: {message}")
         print(f"[PTT] Parsed goal: {goal} target={target}")
         self._write_serial(f"RESULT {goal} {target}")
 

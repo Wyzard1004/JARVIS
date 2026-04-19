@@ -123,6 +123,11 @@ void playReceivePattern(uint8_t packetKind) {
     return;
   }
 
+  if (packetKind == RELAY_KIND_COMMAND_DIRECT) {
+    startPattern(SHORT_BLINK_MS, SHORT_BLINK_MS, 1);
+    return;
+  }
+
   if (packetKind == RELAY_KIND_COMMAND_EXECUTE) {
     startPattern(SHORT_BLINK_MS, SHORT_BLINK_MS, 3);
     return;
@@ -263,6 +268,7 @@ void sendAckPacket(const RelayPacketPlain& sourcePacket) {
 
 uint8_t statusCodeForPacketKind(uint8_t packetKind) {
   if (packetKind == RELAY_KIND_COMMAND_STAGED) return RELAY_STATUS_RECEIVED_STAGED;
+  if (packetKind == RELAY_KIND_COMMAND_DIRECT) return RELAY_STATUS_RECEIVED_COMMAND;
   if (packetKind == RELAY_KIND_COMMAND_EXECUTE) return RELAY_STATUS_RECEIVED_EXECUTE;
   if (packetKind == RELAY_KIND_COMMAND_CANCEL) return RELAY_STATUS_RECEIVED_CANCEL;
   return RELAY_STATUS_ERROR;
@@ -299,6 +305,7 @@ void processCommandPacket(const RelayPacketPlain& packet) {
   }
 
   if (packet.kind != RELAY_KIND_COMMAND_STAGED &&
+      packet.kind != RELAY_KIND_COMMAND_DIRECT &&
       packet.kind != RELAY_KIND_COMMAND_EXECUTE &&
       packet.kind != RELAY_KIND_COMMAND_CANCEL) {
     return;
@@ -339,6 +346,7 @@ void processRadioFrames() {
     }
 
     if (plain.kind == RELAY_KIND_COMMAND_STAGED ||
+        plain.kind == RELAY_KIND_COMMAND_DIRECT ||
         plain.kind == RELAY_KIND_COMMAND_EXECUTE ||
         plain.kind == RELAY_KIND_COMMAND_CANCEL) {
       processCommandPacket(plain);
