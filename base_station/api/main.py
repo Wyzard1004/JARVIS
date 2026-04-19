@@ -13,6 +13,7 @@ import json
 import os
 import asyncio
 import re
+from copy import deepcopy
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, Set
@@ -101,6 +102,7 @@ class ConnectionManager:
 
 
 manager = ConnectionManager()
+pending_execute_commands: Dict[str, Dict] = {}
 
 
 def _scenario_key_for_path(path: Path) -> str:
@@ -251,13 +253,63 @@ def _humanize_location(location: str | None) -> str | None:
     return location.replace("_", " ").title()
 
 
+def _command_scope_key(swarm_intent: Dict, parsed_command: Dict | None = None) -> str:
+    parsed_command = parsed_command or {}
+    return (
+        swarm_intent.get("operator_node")
+        or swarm_intent.get("origin")
+        or parsed_command.get("callsign")
+        or "default"
+    )
+
+
+def _pending_execute_payload(
+    *,
+    event: str,
+    status: str,
+    message: str,
+    transcribed_text: str,
+    parsed_command: Dict,
+    confirmation_text: str | None,
+    scope_key: str,
+) -> Dict:
+    swarm = get_swarm()
+    state = swarm.get_state()
+    return {
+        "event": event,
+        "status": status,
+        "message": message,
+        "algorithm": state.get("algorithm", "gossip"),
+        "target_location": _humanize_location(parsed_command.get("target_location") or parsed_command.get("avoid_location")),
+        "nodes": state.get("nodes", []),
+        "edges": state.get("edges", []),
+        "active_nodes": _build_active_nodes(state),
+        "transcribed_text": transcribed_text,
+        "parsed_command": parsed_command,
+        "confirmation_text": confirmation_text,
+        "pending_execute": {
+            "present": status == "pending_execute",
+            "scope_key": scope_key,
+            "callsign": parsed_command.get("callsign"),
+            "target_location": parsed_command.get("target_location"),
+        },
+        "network_profile": state.get("network_profile", {}),
+        "timestamp": datetime.now().isoformat(),
+    }
+
+
 def _action_code_from_goal(goal: str | None) -> str:
     mapping = {
         "ATTACK_AREA": "ENGAGE_TARGET",
         "SCAN_AREA": "SEARCH",
+        "MARK": "SEARCH",
         "MOVE_TO": "MOVE_TO",
         "AVOID_AREA": "AVOID_AREA",
         "HOLD_POSITION": "HOLD_POSITION",
+        "LOITER": "HOLD_POSITION",
+        "STANDBY": "HOLD_POSITION",
+        "EXECUTE": "EXECUTE",
+        "DISREGARD": "DISREGARD",
         "ABORT": "ABORT",
         "NO_OP": "NO_OP",
     }
@@ -282,6 +334,11 @@ def _to_swarm_intent(parsed_command: Dict, transcribed_text: str, payload: Dict 
         "network_conditions": payload.get("network_conditions", {}),
         "transcribed_text": transcribed_text,
         "parsed_command": parsed_command,
+        "callsign": parsed_command.get("callsign", payload.get("callsign")),
+        "target_location_detail": parsed_command.get("target_location_detail"),
+        "avoid_location_detail": parsed_command.get("avoid_location_detail"),
+        "confirmation_required": bool(parsed_command.get("confirmation_required", False)),
+        "execution_state": parsed_command.get("execution_state", "NONE"),
     }
 
 
@@ -489,6 +546,8 @@ def _build_lean_ui_event(consensus_result: Dict, transcribed_text: str, parsed_c
         "events": consensus_result.get("events", []),
         "transcribed_text": transcribed_text,
         "parsed_command": parsed_command,
+        "pending_execute": {"present": False},
+        "network_profile": consensus_result.get("network_profile", {}),
         "timestamp": datetime.now().isoformat(),
     }
 
@@ -518,6 +577,9 @@ def _build_swarm_event(consensus_result: Dict, transcribed_text: str, parsed_com
         "structures": consensus_result.get("structures", []),
         "special_entities": consensus_result.get("special_entities", []),
         "enemies": consensus_result.get("enemies", []),
+        "pending_execute": {"present": False},
+        "network_profile": consensus_result.get("network_profile", {}),
+        "events": consensus_result.get("events", []),
         "timestamp": datetime.now().isoformat(),
     }
 
@@ -554,6 +616,62 @@ async def _broadcast_state_snapshot(swarm) -> Dict:
 async def _dispatch_swarm_command(transcribed_text: str, swarm_intent: Dict, parsed_command: Dict | None = None) -> Dict:
     confirmation_text = create_confirmation_text(parsed_command) if parsed_command else None
     action_code = swarm_intent.get("action_code", "NO_OP")
+    scope_key = _command_scope_key(swarm_intent, parsed_command)
+    parsed_command = deepcopy(parsed_command) if parsed_command else None
+
+    if parsed_command and parsed_command.get("goal") == "ATTACK_AREA" and parsed_command.get("confirmation_required"):
+        pending_execute_commands[scope_key] = {
+            "transcribed_text": transcribed_text,
+            "swarm_intent": deepcopy(swarm_intent),
+            "parsed_command": deepcopy(parsed_command),
+            "created_at": datetime.now().isoformat(),
+        }
+        payload = _pending_execute_payload(
+            event="command_pending",
+            status="pending_execute",
+            message="Attack command staged. Awaiting EXECUTE.",
+            transcribed_text=transcribed_text,
+            parsed_command=parsed_command,
+            confirmation_text=confirmation_text,
+            scope_key=scope_key,
+        )
+        await manager.broadcast(payload)
+        return payload
+
+    if parsed_command and parsed_command.get("goal") == "EXECUTE":
+        pending = pending_execute_commands.pop(scope_key, None)
+        if not pending:
+            return {
+                "status": "ignored",
+                "message": "No pending destructive command awaiting EXECUTE.",
+                "transcribed_text": transcribed_text,
+                "parsed_command": parsed_command,
+                "confirmation_text": confirmation_text,
+                "nodes": [],
+                "edges": [],
+                "active_nodes": [],
+            }
+
+        swarm_intent = deepcopy(pending["swarm_intent"])
+        parsed_command = deepcopy(pending["parsed_command"])
+        parsed_command["execution_state"] = "EXECUTED"
+        confirmation_text = create_confirmation_text(parsed_command)
+        action_code = swarm_intent.get("action_code", action_code)
+
+    if parsed_command and parsed_command.get("goal") == "DISREGARD":
+        canceled = pending_execute_commands.pop(scope_key, None)
+        message = "Pending command disregarded." if canceled else "No pending command to disregard."
+        payload = _pending_execute_payload(
+            event="command_canceled",
+            status="canceled",
+            message=message,
+            transcribed_text=transcribed_text,
+            parsed_command=parsed_command,
+            confirmation_text=confirmation_text,
+            scope_key=scope_key,
+        )
+        await manager.broadcast(payload)
+        return payload
 
     if action_code == "NO_OP":
         return {
@@ -574,6 +692,8 @@ async def _dispatch_swarm_command(transcribed_text: str, swarm_intent: Dict, par
     else:
         consensus_result = swarm.calculate_gossip_path(swarm_intent)
 
+    consensus_result["network_profile"] = swarm.get_network_profile()
+
     # Build lean event for both WebSocket broadcast and REST API response
     lean_payload = _build_lean_ui_event(
         consensus_result,
@@ -589,11 +709,14 @@ async def _dispatch_swarm_command(transcribed_text: str, swarm_intent: Dict, par
 @app.get("/health")
 async def health_check():
     """Verify the Base Station is online."""
+    swarm = get_swarm()
     return {
         "status": "operational",
         "subsystems": {
             "api": "online",
         },
+        "network_profile": swarm.get_network_profile(),
+        "pending_execute_count": len(pending_execute_commands),
     }
 
 
@@ -925,6 +1048,11 @@ async def get_swarm_state():
         "engagements": state.get("search_state", {}).get("engagements", []),
         "object_reports": state.get("object_reports", []),
         "benchmark": state.get("benchmark", {}),
+        "network_profile": state.get("network_profile", {}),
+        "pending_execute": {
+            "present": bool(pending_execute_commands),
+            "count": len(pending_execute_commands),
+        },
         "available_algorithms": state.get("available_algorithms", []),
         "map_overlay": state.get("map_overlay", {}),
         "enemies": state.get("enemies", []),

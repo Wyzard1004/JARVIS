@@ -186,10 +186,18 @@ Example text payload:
 
 ```json
 {
-  "transcribed_text": "JARVIS, move swarm to Grid Alpha",
+  "transcribed_text": "JARVIS, move to Grid Alpha, over.",
   "consensus_algorithm": "raft"
 }
 ```
+
+Current parser highlights:
+
+- callsign-first phrasing such as `JARVIS, move to Grid Alpha, over.`
+- staged attack flow:
+  - `JARVIS, attack Grid Bravo, over.` -> `command_pending`
+  - `JARVIS, execute, over.` -> live dispatch
+- typed location detail is returned alongside legacy string fields
 
 ### Optional Audio Path
 
@@ -216,9 +224,16 @@ ws://localhost:8000/ws/swarm
 
 Current event naming still uses `gossip_update` for compatibility with the existing frontend, even when the selected algorithm is the TCP/Raft baseline.
 
+Additional lifecycle events now used by staged commands:
+
+- `command_pending`
+- `command_canceled`
+
 ---
 
 ## Project Structure
+
+The repo root intentionally stays small now. Supporting documentation lives under `docs/`, and older implementation notes are kept in `docs/archive/` instead of crowding the top level.
 
 ```text
 jarvis-swarm/
@@ -247,13 +262,16 @@ jarvis-swarm/
 |   +-- tcp_vs_gossip.py            # Standalone comparison utilities
 |
 +-- docs/
-|   +-- SECTION_4_SETUP.md
-|   +-- frozen_command_examples.md
-|   +-- richard_ai_bridge_sketch.md
+|   +-- README.md                 # Docs hub and source-of-truth index
+|   +-- OVERVIEW.md              # Project framing and system blueprint
+|   +-- SETUP.md                 # Local setup and integration notes
+|   +-- TESTING.md               # End-to-end testing guide
+|   +-- COMMAND_SCHEMA.md        # Command contract and examples
+|   +-- ROADMAP.md               # Current execution plan
+|   +-- reference/
+|   |   +-- AI_BRIDGE_SKETCH.md  # Parser design notes
+|   +-- archive/                 # Historical phase notes and superseded docs
 |
-+-- overview.md
-+-- development_gameplan.md
-+-- RICHARD_HANDOFF_GAMEPLAN.md
 +-- README.md
 ```
 
@@ -312,10 +330,13 @@ jarvis-swarm/
 
 ## References
 
-- **Overview**: See [overview.md](overview.md)
-- **Gameplan**: See [development_gameplan.md](development_gameplan.md)
-- **Setup Guide**: See [docs/SECTION_4_SETUP.md](docs/SECTION_4_SETUP.md)
-- **Richard Handoff**: See [RICHARD_HANDOFF_GAMEPLAN.md](RICHARD_HANDOFF_GAMEPLAN.md)
+- **Docs Hub**: See [docs/README.md](docs/README.md)
+- **Overview**: See [docs/OVERVIEW.md](docs/OVERVIEW.md)
+- **Roadmap**: See [docs/ROADMAP.md](docs/ROADMAP.md)
+- **Setup Guide**: See [docs/SETUP.md](docs/SETUP.md)
+- **Testing Guide**: See [docs/TESTING.md](docs/TESTING.md)
+
+Anything in `docs/archive/` is preserved for history but should not be treated as the current source of truth.
 
 ---
 

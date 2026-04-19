@@ -107,13 +107,14 @@ class JetsonSerialPTTListener:
                 print(f"[PTT] Start event received: {event}")
                 self._write_serial("LISTENING")
                 wav_bytes = self._record_until_release()
-                self._write_serial("IDLE")
 
                 if wav_bytes is None:
+                    self._write_serial("READY")
                     print("[PTT] Recording cancelled or too short")
                     self._cooldown()
                     continue
 
+                self._write_serial("PROCESSING")
                 self._submit_command(wav_bytes)
                 self._cooldown()
         finally:
@@ -350,8 +351,11 @@ class JetsonSerialPTTListener:
         parsed = payload.get("parsed_command") or {}
         goal = parsed.get("goal", "UNKNOWN")
         target = parsed.get("target_location") or parsed.get("avoid_location") or "NONE"
+        status = payload.get("status", "unknown")
+        execution_state = parsed.get("execution_state", "NONE")
 
         print(f"[PTT] Transcript: {transcript}")
+        print(f"[PTT] Status: {status} execution_state={execution_state}")
         print(f"[PTT] Parsed goal: {goal} target={target}")
         self._write_serial(f"RESULT {goal} {target}")
 

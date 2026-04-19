@@ -279,8 +279,11 @@ class JetsonWakeListener:
         parsed = payload.get("parsed_command") or {}
         goal = parsed.get("goal", "UNKNOWN")
         target = parsed.get("target_location") or parsed.get("avoid_location")
+        status = payload.get("status", "unknown")
+        execution_state = parsed.get("execution_state", "NONE")
 
         print(f"[LISTENER] Transcript: {transcript}")
+        print(f"[LISTENER] Status: {status} execution_state={execution_state}")
         print(f"[LISTENER] Parsed goal: {goal} target={target}")
 
     def _cooldown(self) -> None:

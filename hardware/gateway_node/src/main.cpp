@@ -18,23 +18,99 @@
 
 const unsigned long SERIAL_BAUD = 115200;
 const unsigned long DEBOUNCE_MS = 25;
+const unsigned long READY_PULSE_MS = 90;
+const unsigned long READY_PERIOD_MS = 1600;
+const unsigned long PROCESSING_BLINK_MS = 140;
 const unsigned long RESULT_BLINK_MS = 120;
+
+enum class LedMode {
+  Ready,
+  Listening,
+  Processing,
+  Result,
+};
 
 bool stablePressed = false;
 bool lastRawPressed = false;
 unsigned long lastEdgeMs = 0;
 String serialLine;
+LedMode ledMode = LedMode::Ready;
+bool ledState = false;
+unsigned long ledModeStartedMs = 0;
+unsigned long lastLedStepMs = 0;
+unsigned int resultBlinkTarget = 0;
+unsigned int resultBlinkCount = 0;
 
-void setListeningLed(bool on) {
+void setLedOutput(bool on) {
+  ledState = on;
   digitalWrite(STATUS_LED_PIN, on ? HIGH : LOW);
 }
 
-void blinkResult(unsigned int count) {
-  for (unsigned int i = 0; i < count; ++i) {
-    digitalWrite(STATUS_LED_PIN, HIGH);
-    delay(RESULT_BLINK_MS);
-    digitalWrite(STATUS_LED_PIN, LOW);
-    delay(RESULT_BLINK_MS);
+void setLedMode(LedMode mode) {
+  ledMode = mode;
+  ledModeStartedMs = millis();
+  lastLedStepMs = ledModeStartedMs;
+  resultBlinkTarget = 0;
+  resultBlinkCount = 0;
+
+  if (mode == LedMode::Listening) {
+    setLedOutput(true);
+    return;
+  }
+
+  setLedOutput(false);
+}
+
+void triggerResult(unsigned int blinkCount) {
+  ledMode = LedMode::Result;
+  ledModeStartedMs = millis();
+  lastLedStepMs = ledModeStartedMs;
+  resultBlinkTarget = blinkCount;
+  resultBlinkCount = 0;
+  setLedOutput(false);
+}
+
+void updateStatusLed() {
+  unsigned long now = millis();
+
+  switch (ledMode) {
+    case LedMode::Ready: {
+      unsigned long phase = (now - ledModeStartedMs) % READY_PERIOD_MS;
+      setLedOutput(phase < READY_PULSE_MS);
+      break;
+    }
+
+    case LedMode::Listening:
+      setLedOutput(true);
+      break;
+
+    case LedMode::Processing: {
+      bool phaseOn = ((now - ledModeStartedMs) / PROCESSING_BLINK_MS) % 2 == 0;
+      setLedOutput(phaseOn);
+      break;
+    }
+
+    case LedMode::Result:
+      if (resultBlinkCount >= resultBlinkTarget) {
+        setLedMode(LedMode::Ready);
+        break;
+      }
+
+      if ((now - lastLedStepMs) < RESULT_BLINK_MS) {
+        break;
+      }
+
+      lastLedStepMs = now;
+      if (!ledState) {
+        setLedOutput(true);
+      } else {
+        setLedOutput(false);
+        resultBlinkCount += 1;
+        if (resultBlinkCount >= resultBlinkTarget) {
+          setLedMode(LedMode::Ready);
+        }
+      }
+      break;
   }
 }
 
@@ -44,24 +120,27 @@ void emitEvent(const char* eventName) {
 
 void applySerialCommand(const String& line) {
   if (line == "LISTENING") {
-    setListeningLed(true);
+    setLedMode(LedMode::Listening);
+    return;
+  }
+
+  if (line == "PROCESSING") {
+    setLedMode(LedMode::Processing);
     return;
   }
 
   if (line == "IDLE" || line == "READY") {
-    setListeningLed(false);
+    setLedMode(LedMode::Ready);
     return;
   }
 
   if (line.startsWith("RESULT ")) {
-    setListeningLed(false);
-    blinkResult(2);
+    triggerResult(2);
     return;
   }
 
   if (line == "ERROR") {
-    setListeningLed(false);
-    blinkResult(4);
+    triggerResult(4);
   }
 }
 
@@ -114,7 +193,7 @@ void pollButton() {
 void setup() {
   pinMode(PTT_BUTTON_PIN, INPUT_PULLUP);
   pinMode(STATUS_LED_PIN, OUTPUT);
-  digitalWrite(STATUS_LED_PIN, LOW);
+  setLedMode(LedMode::Ready);
 
   Serial.begin(SERIAL_BAUD);
   delay(400);
@@ -122,6 +201,7 @@ void setup() {
 }
 
 void loop() {
+  updateStatusLed();
   pollSerialCommands();
   pollButton();
   delay(5);

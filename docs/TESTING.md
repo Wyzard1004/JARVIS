@@ -1,4 +1,4 @@
-# JARVIS Demo Testing Guide
+# Testing Guide
 
 Complete walkthrough for testing all system components end-to-end.
 
@@ -86,12 +86,12 @@ curl -X POST http://localhost:11434/api/generate \
 
 ## Test 3: AI Bridge Intent Parser
 
-**Goal**: Test LLM → JSON command parsing
+**Goal**: Test parser → staged command lifecycle for radio-style inputs
 
 ```bash
 curl -X POST http://localhost:8000/api/voice-command \
   -H "Content-Type: application/json" \
-  -d '{"transcribed_text": "JARVIS, deploy swarm to Grid Alpha"}' | python3 -m json.tool
+  -d '{"transcribed_text": "JARVIS, move to Grid Alpha, over."}' | python3 -m json.tool
 ```
 
 **Expected Output**:
@@ -101,32 +101,71 @@ curl -X POST http://localhost:8000/api/voice-command \
   "status": "propagating",
   "message": "Command executing via swarm consensus protocol",
   "algorithm": "gossip",
-  "control_node": "soldier-1",
   "target_location": "Grid Alpha",
-  "target_x": 0,
-  "target_y": 0,
-  "active_nodes": ["node_1", "node_2", "node_3"],
-  "nodes": [
-    {"id": "node_1", "status": "active", "x": 0, "y": 0},
-    {"id": "node_2", "status": "idle", "x": 100, "y": 50},
-    {"id": "node_3", "status": "idle", "x": -100, "y": -50}
-  ],
-  "edges": [
-    {"source": "node_1", "target": "node_2"},
-    {"source": "node_1", "target": "node_3"}
-  ],
-  "propagation_order": ["node_1", "node_2", "node_3"],
-  "timestamps": [...]
+  "parsed_command": {
+    "goal": "MOVE_TO",
+    "callsign": "JARVIS",
+    "execution_state": "NONE",
+    "terminal_proword": "OVER"
+  }
 }
 ```
 
-✅ **Pass**: Contains nodes, edges, propagation_order, status="propagating"  
+✅ **Pass**: Returns `gossip_update`, `goal="MOVE_TO"`, and `execution_state="NONE"`  
 ❌ **Fail**: Parsing error or empty response
 
 **What this tests**:
-- Ollama LLM intent parsing ✓
+- Rule/parser intent extraction ✓
 - Swarm gossip simulation ✓
 - Serialization to JSON ✓
+
+### Test 3b: Staged Attack + Execute
+
+```bash
+curl -X POST http://localhost:8000/api/voice-command \
+  -H "Content-Type: application/json" \
+  -d '{"transcribed_text": "JARVIS, attack Grid Bravo, over."}' | python3 -m json.tool
+```
+
+**Expected staged response**:
+
+```json
+{
+  "event": "command_pending",
+  "status": "pending_execute",
+  "parsed_command": {
+    "goal": "ATTACK_AREA",
+    "execution_state": "PENDING_EXECUTE"
+  },
+  "pending_execute": {
+    "present": true
+  }
+}
+```
+
+Then release it:
+
+```bash
+curl -X POST http://localhost:8000/api/voice-command \
+  -H "Content-Type: application/json" \
+  -d '{"transcribed_text": "JARVIS, execute, over."}' | python3 -m json.tool
+```
+
+**Expected execution response**:
+
+```json
+{
+  "event": "gossip_update",
+  "status": "propagating",
+  "parsed_command": {
+    "goal": "ATTACK_AREA",
+    "execution_state": "EXECUTED"
+  }
+}
+```
+
+✅ **Pass**: First call returns `command_pending`, second returns `gossip_update`  
+❌ **Fail**: Attack dispatches immediately or `EXECUTE` returns no pending command
 
 ---
 
@@ -260,7 +299,7 @@ EOF
    - Button turns red and says "🔴 STOP"
    - Browser says "Allow this site to use your microphone"
 
-2. **Speak clearly**: "JARVIS, deploy swarm to Grid Charlie"
+2. **Speak clearly**: "JARVIS, move to Grid Charlie, over."
 
 3. **Release button** (wait 2 seconds)
    - Button returns to "🎤 PUSH TO TALK"
@@ -279,14 +318,14 @@ EOF
 
 ## Test 8: Full End-to-End Flow (Automated)
 
-**Goal**: Test entire pipeline: Speech → LLM → Gossip → UI Update
+**Goal**: Test entire pipeline: Speech → Parser → Gossip → UI Update
 
 ```bash
 # Terminal command to simulate user input
 curl -X POST http://localhost:8000/api/voice-command \
   -H "Content-Type: application/json" \
   -d '{
-    "transcribed_text": "JARVIS, search grid alpha and bravo",
+    "transcribed_text": "JARVIS, scan Grid Alpha 2, over.",
     "consensus_algorithm": "gossip"
   }' | python3 -m json.tool
 ```
@@ -294,7 +333,7 @@ curl -X POST http://localhost:8000/api/voice-command \
 **Expected Flow**: Watch for these in sequence:
 
 1. **Backend receives command**: `POST /api/voice-command`
-2. **Ollama parses intent**: Text → JSON with goal, target, action
+2. **Parser extracts intent**: Text → JSON with goal, target, callsign, and execution state
 3. **Swarm calculates gossip**: Identifies nodes, timestamps propagation
 4. **WebSocket broadcasts**: Update sent to React UI
 5. **D3 graph updates**: Nodes animate, colors change, edges highlight
@@ -305,10 +344,13 @@ curl -X POST http://localhost:8000/api/voice-command \
 {
   "event": "gossip_update",
   "status": "propagating",
-  "target_location": "Grid Alpha",
-  "active_nodes": ["node_1", "node_2", "node_3"],
-  "propagation_order": ["node_1", "node_2", "node_3"],
-  "confirmation_text": "Search initiated in Grid Alpha and Bravo"
+  "target_location": "Grid Alpha 2",
+  "parsed_command": {
+    "goal": "SCAN_AREA",
+    "callsign": "JARVIS",
+    "execution_state": "NONE"
+  },
+  "confirmation_text": "JARVIS, scanning Grid Alpha 2, over."
 }
 ```
 
@@ -348,7 +390,7 @@ systemctl stop ollama
 # Try command
 curl -X POST http://localhost:8000/api/voice-command \
   -H "Content-Type: application/json" \
-  -d '{"transcribed_text": "JARVIS, deploy swarm"}' 
+  -d '{"transcribed_text": "JARVIS, move to Grid Alpha, over."}' 
 ```
 
 **Expected**: HTTP 502 or graceful fallback to rules-based parser
@@ -376,7 +418,7 @@ time curl -X POST http://localhost:11434/api/generate \
 # Measure voice-command endpoint latency
 time curl -X POST http://localhost:8000/api/voice-command \
   -H "Content-Type: application/json" \
-  -d '{"transcribed_text": "JARVIS, engage target"}' > /dev/null 2>&1
+  -d '{"transcribed_text": "JARVIS, move to Grid Alpha, over."}' > /dev/null 2>&1
 ```
 
 **Expected**: <500ms after first warmup
@@ -409,11 +451,12 @@ DEMO READY: YES ✅
 
 2. **"I'm going to speak a voice command."**
    - Click Push-to-Talk in React UI
-   - Say: "JARVIS, deploy swarm to Grid Bravo"
+   - Say: "JARVIS, attack Grid Bravo, over."
 
 3. **"Watch the command flow through our system in real-time."**
-   - Show backend logs processing the command
-   - Show WebSocket receiving gossip updates
+   - Show backend logs staging the command as `pending_execute`
+   - Say: "JARVIS, execute, over."
+   - Show WebSocket receiving the final `gossip_update`
    - Show D3 graph animating the swarm topology
 
 4. **"The gossip protocol calculates the most efficient propagation path."**

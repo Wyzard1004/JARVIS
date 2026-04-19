@@ -268,11 +268,24 @@ function App() {
           console.log('[App] Received event:', data.event)
 
           if (data.event === 'state_update' || data.event === 'initial_state') {
+            if (data.event === 'state_update') {
+              console.log('[App] State update: drones=' + (data.nodes?.length || 0) +
+                ', edges=' + (data.edges?.length || 0))
+            } else {
+              console.log('[App] Initial state received')
+            }
             applyIncomingState(data)
             return
           }
 
-          if (data.event === 'gossip_update' || data.event === 'swarm_state') {
+          // Handle gossip updates from voice commands and staged command states
+          if (
+            data.event === 'gossip_update' ||
+            data.event === 'swarm_state' ||
+            data.event === 'command_pending' ||
+            data.event === 'command_canceled'
+          ) {
+            console.log('[App] Updating swarm state from command response')
             applyIncomingState(data)
             setCurrentCommand({
               timestamp: new Date().toLocaleTimeString(),
@@ -280,7 +293,9 @@ function App() {
               status: data.status || 'processing',
               nodes: data.active_nodes?.length || data.nodes?.length || 0,
               totalTime: `${(data.total_propagation_ms || 0).toFixed(0)}ms`,
-              message: data.confirmation_text || ''
+              message: data.confirmation_text || data.message || '',
+              pendingExecute: Boolean(data.pending_execute?.present),
+              callsign: data.parsed_command?.callsign || 'JARVIS'
             })
             return
           }
@@ -401,13 +416,28 @@ function App() {
         timestamp: new Date().toISOString(),
         command: transcriptText,
         status: result.status,
-        goal: result.parsed_command?.goal || 'UNKNOWN'
+        goal: result.parsed_command?.goal || 'UNKNOWN',
+        executionState: result.parsed_command?.execution_state || 'NONE'
       }])
 
       if (result.nodes?.length) {
         applyIncomingState(result)
       }
 
+      if (result.status) {
+        setCurrentCommand({
+          timestamp: new Date().toLocaleTimeString(),
+          target: result.target_location || 'Unknown',
+          status: result.status || 'processing',
+          nodes: result.active_nodes?.length || result.nodes?.length || 0,
+          totalTime: `${(result.total_propagation_ms || 0).toFixed(0)}ms`,
+          message: result.confirmation_text || result.message || '',
+          pendingExecute: Boolean(result.pending_execute?.present),
+          callsign: result.parsed_command?.callsign || 'JARVIS'
+        })
+      }
+
+      console.log('[App] Command sent:', result)
       return result
     } catch (error) {
       console.error('[App] Error sending command:', error)
@@ -636,13 +666,20 @@ function App() {
       </header>
 
       {currentCommand && (
-        <div className="bg-gradient-to-r from-yellow-900 to-red-900 border-b-4 border-red-500 p-6">
+        <div className={currentCommand.pendingExecute
+          ? 'bg-gradient-to-r from-yellow-950 to-orange-900 border-b-4 border-yellow-500 p-6'
+          : 'bg-gradient-to-r from-yellow-900 to-red-900 border-b-4 border-red-500 p-6'}>
           <div className="flex items-start justify-between">
             <div>
               <p className="text-xs uppercase tracking-widest text-gray-300 mb-2">📡 ACTIVE MISSION</p>
               <h2 className="text-4xl font-bold text-yellow-300 mb-4">
                 {currentCommand.target || 'UNKNOWN'}
               </h2>
+              {currentCommand.pendingExecute && (
+                <p className="mb-4 inline-block rounded border border-yellow-400 px-3 py-1 text-sm font-semibold uppercase tracking-wide text-yellow-200">
+                  Awaiting Execute
+                </p>
+              )}
               <div className="grid gap-4 md:grid-cols-3 md:gap-8">
                 <div>
                   <p className="text-xs text-gray-300 uppercase">Status</p>
@@ -995,6 +1032,7 @@ function App() {
                   <div key={`${cmd.timestamp}-${index}`} className="bg-gray-900 p-2 rounded text-xs border-l-2 border-yellow-500">
                     <p className="font-mono text-gray-300">{cmd.command.substring(0, 40)}...</p>
                     <p className="text-xs text-blue-400">{cmd.goal}</p>
+                    <p className="text-[10px] text-gray-500">{cmd.status} / {cmd.executionState}</p>
                   </div>
                 ))}
               </div>
