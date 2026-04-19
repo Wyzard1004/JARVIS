@@ -15,8 +15,11 @@ import asyncio
 import re
 from copy import deepcopy
 from datetime import datetime
+from itertools import count
 from pathlib import Path
 from typing import Dict, Set
+from urllib import error as urllib_error
+from urllib import request as urllib_request
 from uuid import uuid4
 
 from dotenv import load_dotenv
@@ -103,6 +106,21 @@ class ConnectionManager:
 
 manager = ConnectionManager()
 pending_execute_commands: Dict[str, Dict] = {}
+relay_packet_sequence = count(1)
+
+
+def _env_flag(name: str, default: bool) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
+RELAY_BRIDGE_ENABLED = _env_flag("JARVIS_RELAY_ENABLED", True)
+RELAY_BRIDGE_URL = os.getenv("JARVIS_RELAY_BRIDGE_URL", "http://127.0.0.1:8765/relay").strip()
+RELAY_BRIDGE_TIMEOUT_SEC = float(os.getenv("JARVIS_RELAY_BRIDGE_TIMEOUT_SEC", "0.35"))
+RELAY_BRIDGE_MAX_HOPS = int(os.getenv("JARVIS_RELAY_MAX_HOPS", "2"))
+RELAY_BRIDGE_TTL_MS = int(os.getenv("JARVIS_RELAY_TTL_MS", "15000"))
 
 
 def _scenario_key_for_path(path: Path) -> str:
@@ -607,6 +625,80 @@ def _build_state_snapshot_message(state: Dict, event_name: str = "state_update")
     }
 
 
+def _relay_priority_for_goal(goal: str | None) -> str:
+    normalized = (goal or "").upper()
+    if normalized in {"ATTACK_AREA", "EXECUTE", "DISREGARD", "ABORT"}:
+        return "high"
+    if normalized in {"SCAN_AREA", "MOVE_TO", "MARK", "AVOID_AREA"}:
+        return "medium"
+    return "low"
+
+
+def _relay_packet_kind_for_event(event_name: str | None) -> str | None:
+    mapping = {
+        "command_pending": "COMMAND_STAGED",
+        "gossip_update": "COMMAND_EXECUTE",
+        "command_canceled": "COMMAND_CANCEL",
+    }
+    return mapping.get((event_name or "").strip())
+
+
+def _build_relay_bridge_payload(event_payload: Dict, relay_command: Dict, scope_key: str) -> Dict | None:
+    packet_kind = _relay_packet_kind_for_event(event_payload.get("event"))
+    if not packet_kind:
+        return None
+
+    goal = relay_command.get("goal") or relay_command.get("action_code") or "UNKNOWN"
+    issued_at_ms = int(datetime.now().timestamp() * 1000)
+    expires_at_ms = issued_at_ms + max(1000, RELAY_BRIDGE_TTL_MS)
+
+    return {
+        "event": event_payload.get("event"),
+        "packet_kind": packet_kind,
+        "packet_id": next(relay_packet_sequence),
+        "origin_node": scope_key or "soldier-1",
+        "callsign": relay_command.get("callsign") or "JARVIS",
+        "goal": goal,
+        "execution_state": relay_command.get("execution_state") or "NONE",
+        "target_location": (
+            relay_command.get("target_location")
+            or relay_command.get("avoid_location")
+            or event_payload.get("target_location")
+        ),
+        "priority": _relay_priority_for_goal(goal),
+        "issued_at_ms": issued_at_ms,
+        "expires_at_ms": expires_at_ms,
+        "max_hops": max(0, RELAY_BRIDGE_MAX_HOPS),
+        "ack_required": True,
+    }
+
+
+def _post_relay_bridge_sync(relay_payload: Dict) -> None:
+    body = json.dumps(relay_payload, separators=(",", ":")).encode("utf-8")
+    request = urllib_request.Request(
+        RELAY_BRIDGE_URL,
+        data=body,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    with urllib_request.urlopen(request, timeout=RELAY_BRIDGE_TIMEOUT_SEC) as response:
+        response.read()
+
+
+async def _mirror_event_to_hardware(event_payload: Dict, relay_command: Dict, scope_key: str) -> None:
+    if not RELAY_BRIDGE_ENABLED:
+        return
+
+    relay_payload = _build_relay_bridge_payload(event_payload, relay_command, scope_key)
+    if not relay_payload:
+        return
+
+    try:
+        await asyncio.to_thread(_post_relay_bridge_sync, relay_payload)
+    except (urllib_error.URLError, TimeoutError, OSError) as exc:
+        print(f"[RELAY] Bridge mirror failed: {exc}")
+
+
 async def _broadcast_state_snapshot(swarm) -> Dict:
     snapshot = _build_state_snapshot_message(swarm.get_state(), "state_update")
     await manager.broadcast(snapshot)
@@ -618,6 +710,13 @@ async def _dispatch_swarm_command(transcribed_text: str, swarm_intent: Dict, par
     action_code = swarm_intent.get("action_code", "NO_OP")
     scope_key = _command_scope_key(swarm_intent, parsed_command)
     parsed_command = deepcopy(parsed_command) if parsed_command else None
+    relay_command = deepcopy(parsed_command) if parsed_command else {
+        "goal": action_code,
+        "execution_state": swarm_intent.get("execution_state", "NONE"),
+        "callsign": swarm_intent.get("callsign"),
+        "target_location": swarm_intent.get("target_location"),
+        "avoid_location": None,
+    }
 
     if parsed_command and parsed_command.get("goal") == "ATTACK_AREA" and parsed_command.get("confirmation_required"):
         pending_execute_commands[scope_key] = {
@@ -636,6 +735,7 @@ async def _dispatch_swarm_command(transcribed_text: str, swarm_intent: Dict, par
             scope_key=scope_key,
         )
         await manager.broadcast(payload)
+        await _mirror_event_to_hardware(payload, relay_command, scope_key)
         return payload
 
     if parsed_command and parsed_command.get("goal") == "EXECUTE":
@@ -655,6 +755,7 @@ async def _dispatch_swarm_command(transcribed_text: str, swarm_intent: Dict, par
         swarm_intent = deepcopy(pending["swarm_intent"])
         parsed_command = deepcopy(pending["parsed_command"])
         parsed_command["execution_state"] = "EXECUTED"
+        relay_command = deepcopy(parsed_command)
         confirmation_text = create_confirmation_text(parsed_command)
         action_code = swarm_intent.get("action_code", action_code)
 
@@ -671,6 +772,7 @@ async def _dispatch_swarm_command(transcribed_text: str, swarm_intent: Dict, par
             scope_key=scope_key,
         )
         await manager.broadcast(payload)
+        await _mirror_event_to_hardware(payload, relay_command, scope_key)
         return payload
 
     if action_code == "NO_OP":
@@ -703,6 +805,7 @@ async def _dispatch_swarm_command(transcribed_text: str, swarm_intent: Dict, par
     )
     
     await manager.broadcast(lean_payload)
+    await _mirror_event_to_hardware(lean_payload, relay_command, scope_key)
     return lean_payload
 
 
