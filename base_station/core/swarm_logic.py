@@ -130,6 +130,19 @@ class SwarmCoordinator:
             "claim_timeout_ms": self.DEMO_CLAIM_TIMEOUT_MS if demo_mode else self.DEFAULT_CLAIM_TIMEOUT_MS,
         }
 
+    def get_network_profile(self) -> Dict:
+        profile_mode = os.getenv("JARVIS_NETWORK_PROFILE", "baseline").strip().lower()
+        demo_mode = profile_mode == "demo"
+        return {
+            "profile": "demo" if demo_mode else "baseline",
+            "gossip_fanout": self.DEMO_GOSSIP_FANOUT if demo_mode else self.DEFAULT_GOSSIP_FANOUT,
+            "max_hops": self.DEMO_MAX_HOPS if demo_mode else self.DEFAULT_MAX_HOPS,
+            "retry_limit": self.DEFAULT_RETRY_LIMIT if not demo_mode else 2,
+            "retry_backoff_ms": self.DEFAULT_RETRY_BACKOFF_MS if not demo_mode else 100.0,
+            "lease_ms": self.DEMO_LEASE_MS if demo_mode else self.DEFAULT_LEASE_MS,
+            "claim_timeout_ms": self.DEMO_CLAIM_TIMEOUT_MS if demo_mode else self.DEFAULT_CLAIM_TIMEOUT_MS,
+        }
+
     def _load_config(self, config_path: str) -> Optional[Dict]:
         try:
             with open(config_path, "r", encoding="utf-8") as handle:
