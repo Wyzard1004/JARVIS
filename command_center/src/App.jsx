@@ -13,6 +13,39 @@ import StatusPanel from './components/StatusPanel'
 import SoldierSelector from './components/SoldierSelector'
 import { getEntityDisplayLabel, sanitizeUnitIdentifiers } from './lib/displayNames'
 
+const normalizeBaseUrl = (value) => String(value || '').trim().replace(/\/+$/, '')
+const API_BASE_URL = normalizeBaseUrl(import.meta.env.VITE_API_BASE_URL)
+const EXPLICIT_WEBSOCKET_URL = normalizeBaseUrl(import.meta.env.VITE_WEBSOCKET_URL)
+
+const joinUrl = (baseUrl, path) => {
+  if (!baseUrl) return path
+  const sanitizedPath = String(path || '').replace(/^\/+/, '')
+  return new URL(sanitizedPath, `${baseUrl}/`).toString()
+}
+
+const resolveApiUrl = (path) => joinUrl(API_BASE_URL, path)
+
+const resolveWebSocketUrl = () => {
+  if (EXPLICIT_WEBSOCKET_URL) {
+    return EXPLICIT_WEBSOCKET_URL
+  }
+
+  if (API_BASE_URL) {
+    const wsUrl = new URL(joinUrl(API_BASE_URL, 'ws/swarm'))
+    wsUrl.protocol = wsUrl.protocol === 'https:' ? 'wss:' : 'ws:'
+    return wsUrl.toString()
+  }
+
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+  return `${protocol}//${window.location.hostname}:8000/ws/swarm`
+}
+
+const resolveScenarioAssetUrl = (assetUrl) => {
+  if (!assetUrl) return assetUrl
+  if (/^https?:\/\//i.test(assetUrl)) return assetUrl
+  return joinUrl(API_BASE_URL, assetUrl)
+}
+
 const MAP_MODE_OPTIONS = [
   {
     id: 'nato',
@@ -160,6 +193,14 @@ const POINT_TOOL_CONFIG = {
 const normalizeSwarmState = (state) => {
   if (!state || typeof state !== 'object') return null
 
+  const mapOverlay = {
+    ...DEFAULT_MAP_OVERLAY,
+    ...(state.map_overlay || {})
+  }
+  if (mapOverlay.asset_url) {
+    mapOverlay.asset_url = resolveScenarioAssetUrl(mapOverlay.asset_url)
+  }
+
   return {
     ...state,
     operator_context: {
@@ -169,10 +210,7 @@ const normalizeSwarmState = (state) => {
         ? state.operator_context.available_operators
         : DEFAULT_OPERATOR_CONTEXT.available_operators
     },
-    map_overlay: {
-      ...DEFAULT_MAP_OVERLAY,
-      ...(state.map_overlay || {})
-    },
+    map_overlay: mapOverlay,
     enemies: Array.isArray(state.enemies) ? state.enemies : [],
     structures: Array.isArray(state.structures) ? state.structures : [],
     special_entities: Array.isArray(state.special_entities) ? state.special_entities : [],
@@ -300,7 +338,7 @@ function App() {
 
   const refreshScenarioCatalog = async () => {
     try {
-      const response = await fetch('/api/scenarios')
+      const response = await fetch(resolveApiUrl('/api/scenarios'))
       const result = await response.json()
       if (!response.ok) {
         throw new Error(result.detail || result.message || 'Scenario list request failed')
@@ -315,7 +353,7 @@ function App() {
   const pushEditorPayload = async (payload, successMessage) => {
     setEditorBusy(true)
     try {
-      const response = await fetch('/api/map-editor/state', {
+      const response = await fetch(resolveApiUrl('/api/map-editor/state'), {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
@@ -356,7 +394,7 @@ function App() {
     }
 
     try {
-      const response = await fetch(`/api/soldier/${soldierId}/status`)
+      const response = await fetch(resolveApiUrl(`/api/soldier/${soldierId}/status`))
       const data = await response.json()
       if (!response.ok) {
         throw new Error(data.detail || data.message || 'Soldier status request failed')
@@ -387,11 +425,7 @@ function App() {
     const connectWebSocket = () => {
       if (isCleaningUpRef.current) return
 
-      let wsUrl = import.meta.env.VITE_WEBSOCKET_URL
-      if (!wsUrl) {
-        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-        wsUrl = `${protocol}//${window.location.hostname}:8000/ws/swarm`
-      }
+      const wsUrl = resolveWebSocketUrl()
 
       console.log(`[App] Connecting to WebSocket at ${wsUrl}`)
       const ws = new WebSocket(wsUrl)
@@ -538,7 +572,7 @@ function App() {
       }
 
       if (typeof transcript === 'string') {
-        response = await fetch('/api/voice-command', {
+        response = await fetch(resolveApiUrl('/api/voice-command'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -557,7 +591,7 @@ function App() {
         formData.append('audio', transcript.audioBlob, `recording.${extension}`)
         formData.append('origin', activeSoldier)
         formData.append('operator_node', activeSoldier)
-        response = await fetch('/api/transcribe-command', {
+        response = await fetch(resolveApiUrl('/api/transcribe-command'), {
           method: 'POST',
           body: formData
         })
@@ -615,7 +649,7 @@ function App() {
     const previousSoldier = activeSoldier
     setActiveSoldier(soldierId)
     try {
-      const response = await fetch('/api/operator-context', {
+      const response = await fetch(resolveApiUrl('/api/operator-context'), {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ active_operator: soldierId })
@@ -767,7 +801,7 @@ function App() {
     try {
       const formData = new FormData()
       formData.append('file', file)
-      const response = await fetch('/api/map-editor/overlay', {
+      const response = await fetch(resolveApiUrl('/api/map-editor/overlay'), {
         method: 'POST',
         body: formData
       })
@@ -789,7 +823,7 @@ function App() {
   const handleSaveScenario = async () => {
     setEditorBusy(true)
     try {
-      const response = await fetch('/api/map-editor/save', {
+      const response = await fetch(resolveApiUrl('/api/map-editor/save'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ scenario_name: scenarioName.trim() })
@@ -813,7 +847,7 @@ function App() {
     if (!selectedScenarioKey) return
     setScenarioBusy(true)
     try {
-      const response = await fetch('/api/scenarios/load', {
+      const response = await fetch(resolveApiUrl('/api/scenarios/load'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ scenario_key: selectedScenarioKey })

@@ -146,6 +146,32 @@ npm install
 npm run dev
 ```
 
+### Remote Tailscale Setup
+
+If the backend is running on another machine, point the command center and Jetson listener at that host instead of `localhost`.
+
+Frontend example:
+
+```bash
+cd command_center
+cp env.remote.example .env.local
+```
+
+Set `VITE_API_BASE_URL` to the backend machine's Tailscale IP or MagicDNS name, for example:
+
+```bash
+VITE_API_BASE_URL=http://philly-backend.example.ts.net:8000
+```
+
+The app will derive the WebSocket URL automatically unless you also set `VITE_WEBSOCKET_URL`.
+
+Jetson example:
+
+```bash
+export JARVIS_LISTENER_API_URL=http://philly-backend.example.ts.net:8000/api/transcribe-command
+export JARVIS_OPERATOR_NODE=soldier-1
+```
+
 ### Verify
 
 - FastAPI docs open at [http://localhost:8000/docs](http://localhost:8000/docs)

@@ -67,6 +67,25 @@ npm install
 npm run dev
 ```
 
+### Remote Backend Over Tailscale
+
+When the backend runs on a different machine, configure the command center to use the backend machine's Tailscale address.
+
+Start from `command_center/env.remote.example`, then create `command_center/.env.local` with:
+
+```bash
+VITE_API_BASE_URL=http://philly-backend.example.ts.net:8000
+```
+
+`VITE_WEBSOCKET_URL` is optional. If it is omitted, the frontend derives `/ws/swarm` from `VITE_API_BASE_URL`.
+
+For the Jetson listener, set:
+
+```bash
+export JARVIS_LISTENER_API_URL=http://philly-backend.example.ts.net:8000/api/transcribe-command
+export JARVIS_OPERATOR_NODE=soldier-1
+```
+
 Open:
 
 - [http://localhost:8000/docs](http://localhost:8000/docs)
