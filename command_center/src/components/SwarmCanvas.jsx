@@ -61,6 +61,7 @@ function SwarmCanvas({
   onMapEntityMove = () => {},
   onDroneMove = () => {}
 }) {
+  const canvasContainerRef = useRef(null)
   const canvasRef = useRef(null)
   const animationFrameRef = useRef(null)
   const pointerStateRef = useRef(null)
@@ -72,6 +73,15 @@ function SwarmCanvas({
   const [revealedSpecialEntities, setRevealedSpecialEntities] = useState(new Set())
   const [dragPreview, setDragPreview] = useState(null)
   const [activeDrag, setActiveDrag] = useState(null)
+  const [canvasSize, setCanvasSize] = useState(() => {
+    const dpr = typeof window !== 'undefined' ? Math.max(1, window.devicePixelRatio || 1) : 1
+    return {
+      cssWidth: CANVAS_WIDTH,
+      cssHeight: CANVAS_HEIGHT,
+      backingWidth: Math.round(CANVAS_WIDTH * dpr),
+      backingHeight: Math.round(CANVAS_HEIGHT * dpr)
+    }
+  })
 
   const entities = stateToEntities(state)
   const drones = entities.filter((entity) => entity.type === 'drone')
@@ -875,12 +885,78 @@ function SwarmCanvas({
   }, [drones, enemies, overlayKey, specialEntities])
 
   useEffect(() => {
+    const container = canvasContainerRef.current
+    if (!container) return undefined
+
+    const updateCanvasSize = () => {
+      const rect = container.getBoundingClientRect()
+      const cssWidth = Math.max(1, Math.round(rect.width || CANVAS_WIDTH))
+      const cssHeight = Math.max(1, Math.round(rect.height || cssWidth || CANVAS_HEIGHT))
+      const dpr = typeof window !== 'undefined' ? Math.max(1, window.devicePixelRatio || 1) : 1
+      const backingWidth = Math.max(1, Math.round(cssWidth * dpr))
+      const backingHeight = Math.max(1, Math.round(cssHeight * dpr))
+
+      setCanvasSize((previous) => {
+        if (
+          previous.cssWidth === cssWidth &&
+          previous.cssHeight === cssHeight &&
+          previous.backingWidth === backingWidth &&
+          previous.backingHeight === backingHeight
+        ) {
+          return previous
+        }
+
+        return {
+          cssWidth,
+          cssHeight,
+          backingWidth,
+          backingHeight
+        }
+      })
+    }
+
+    updateCanvasSize()
+
+    let frameId = null
+    const scheduleSizeUpdate = () => {
+      if (frameId !== null) return
+      frameId = window.requestAnimationFrame(() => {
+        frameId = null
+        updateCanvasSize()
+      })
+    }
+
+    const observer = typeof ResizeObserver !== 'undefined'
+      ? new ResizeObserver(() => {
+        scheduleSizeUpdate()
+      })
+      : null
+
+    observer?.observe(container)
+    window.addEventListener('resize', scheduleSizeUpdate)
+
+    return () => {
+      if (frameId !== null) {
+        window.cancelAnimationFrame(frameId)
+      }
+      observer?.disconnect()
+      window.removeEventListener('resize', scheduleSizeUpdate)
+    }
+  }, [])
+
+  useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas) return undefined
     const ctx = canvas.getContext('2d')
     if (!ctx) return undefined
+    const scaleX = canvasSize.backingWidth / CANVAS_WIDTH
+    const scaleY = canvasSize.backingHeight / CANVAS_HEIGHT
 
     const animate = () => {
+      ctx.setTransform(scaleX, 0, 0, scaleY, 0, 0)
+      ctx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT)
+      ctx.imageSmoothingEnabled = true
+      ctx.imageSmoothingQuality = 'high'
       render(ctx)
       animationFrameRef.current = requestAnimationFrame(animate)
     }
@@ -910,7 +986,9 @@ function SwarmCanvas({
     showEntityLabels,
     specialEntities,
     structures,
-    transmissionGraph
+    transmissionGraph,
+    canvasSize.backingHeight,
+    canvasSize.backingWidth
   ])
 
   const getWorldPointFromEvent = (event) => {
@@ -1181,28 +1259,37 @@ function SwarmCanvas({
   })()
 
   return (
-    <canvas
-      ref={canvasRef}
-      width={CANVAS_WIDTH}
-      height={CANVAS_HEIGHT}
-      onPointerDown={(event) => {
-        void handlePointerDown(event)
-      }}
-      onPointerMove={handlePointerMove}
-      onPointerUp={(event) => {
-        void handlePointerUp(event)
-      }}
-      onPointerLeave={handlePointerLeave}
+    <div
+      ref={canvasContainerRef}
       style={{
-        border: '2px solid #4A4A4A',
-        backgroundColor: '#1A1A1A',
-        cursor,
-        display: 'block',
-        maxWidth: '100%',
-        height: 'auto',
-        touchAction: 'none'
+        width: '100%',
+        aspectRatio: '1 / 1'
       }}
-    />
+    >
+      <canvas
+        ref={canvasRef}
+        width={canvasSize.backingWidth}
+        height={canvasSize.backingHeight}
+        onPointerDown={(event) => {
+          void handlePointerDown(event)
+        }}
+        onPointerMove={handlePointerMove}
+        onPointerUp={(event) => {
+          void handlePointerUp(event)
+        }}
+        onPointerLeave={handlePointerLeave}
+        style={{
+          border: '2px solid #4A4A4A',
+          backgroundColor: '#1A1A1A',
+          cursor,
+          boxSizing: 'border-box',
+          display: 'block',
+          width: '100%',
+          height: '100%',
+          touchAction: 'none'
+        }}
+      />
+    </div>
   )
 }
 

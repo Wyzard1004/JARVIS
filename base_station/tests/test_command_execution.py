@@ -337,7 +337,7 @@ class SwarmCommandExecutionTests(unittest.TestCase):
                 {
                     "origin": "soldier-1",
                     "operator_node": "soldier-1",
-                    "target_location": "Grid Bravo",
+                    "target_location": "Grid Echo 5",
                     "action_code": "SEARCH",
                     "consensus_algorithm": "gossip",
                 }
@@ -352,11 +352,45 @@ class SwarmCommandExecutionTests(unittest.TestCase):
             self.assertEqual(result["status"], "searching")
             self.assertEqual(result["search_state"]["mission_status"], "searching")
             self.assertEqual(node_behaviors["recon-1"], "patrol")
+            self.assertEqual(node_behaviors["attack-1"], "lurk")
             self.assertEqual(task_behaviors["recon-1"], "patrol")
+            self.assertEqual(task_behaviors["attack-1"], "lurk")
             self.assertGreaterEqual(len(result["object_reports"]), 1)
             self.assertTrue(
                 any(event["event_type"] == "target_discovered" for event in result["events"])
             )
+
+    def test_recon_patrol_route_traverses_intermediate_sectors_without_retasking_attack_drones(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config_path = Path(temp_dir) / "recon_patrol_route.json"
+            _write_test_scenario(config_path)
+
+            swarm = SwarmCoordinator(config_path=str(config_path))
+            result = swarm.calculate_gossip_path(
+                {
+                    "origin": "soldier-1",
+                    "operator_node": "soldier-1",
+                    "target_location": "Grid Bravo 1",
+                    "patrol_end_location": "Grid Bravo 3",
+                    "action_code": "SEARCH",
+                    "consensus_algorithm": "gossip",
+                }
+            )
+
+            node_behaviors = {node["id"]: node.get("behavior") for node in result["nodes"]}
+            recon_waypoints = swarm._drone_behaviors["recon-1"]["waypoints"]
+            route_labels = [
+                swarm.space.display_sector_label(tuple(point))
+                for point in recon_waypoints[1:]
+            ]
+
+            self.assertEqual(result["search_state"]["objective"], "Recon patrol from Grid Bravo 1 to Grid Bravo 3")
+            self.assertEqual(result["search_state"]["patrol_end_location"], "Grid Bravo 3")
+            self.assertEqual(node_behaviors["recon-1"], "patrol")
+            self.assertEqual(node_behaviors["attack-1"], "lurk")
+            self.assertIn("Bravo-1", route_labels)
+            self.assertIn("Bravo-2", route_labels)
+            self.assertIn("Bravo-3", route_labels)
 
 
 if __name__ == "__main__":

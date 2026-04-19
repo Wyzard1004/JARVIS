@@ -34,20 +34,29 @@ The parser stores callsign in the output schema even when older-style phrases ar
 
 ## Current Location IDs
 
-Legacy canonical location IDs are still supported:
+The live voice/display grid now matches the GUI's 8×8 overlay:
+
+- rows: `ALPHA` through `HOTEL`
+- columns: `1` through `8`
+
+Canonical location IDs include coarse row references such as:
 
 - `GRID_ALPHA`
 - `GRID_BRAVO`
 - `GRID_CHARLIE`
+- `GRID_DELTA`
+- `GRID_ECHO`
+- `GRID_FOXTROT`
+- `GRID_GOLF`
+- `GRID_HOTEL`
+
+and numbered sectors such as:
+
 - `GRID_ALPHA_1`
-- `GRID_ALPHA_2`
-- `GRID_ALPHA_3`
-- `GRID_BRAVO_1`
-- `GRID_BRAVO_2`
 - `GRID_BRAVO_3`
-- `GRID_CHARLIE_1`
-- `GRID_CHARLIE_2`
-- `GRID_CHARLIE_3`
+- `GRID_DELTA_6`
+- `GRID_GOLF_7`
+- `GRID_HOTEL_8`
 
 The parser also now returns typed detail objects such as:
 
@@ -60,6 +69,11 @@ The parser also now returns typed detail objects such as:
   "subsector": 3
 }
 ```
+
+Recon patrol routes can additionally set:
+
+- `patrol_end_location`
+- `patrol_end_location_detail`
 
 ## Output Schema
 
@@ -146,8 +160,9 @@ Examples:
 1. `JARVIS, move to Grid Alpha, over.`
 2. `JARVIS, scan Grid Alpha 2, over.`
 3. `JARVIS, attack Grid Bravo, over.`
-4. `JARVIS, execute, over.`
-5. `JARVIS, all units, abort, out.`
+4. `JARVIS, recon patrol Bravo 1 to Bravo 3, over.`
+5. `JARVIS, execute, over.`
+6. `JARVIS, all units, abort, out.`
 
 ## Expected Mappings
 
@@ -246,5 +261,5 @@ Output:
 
 - only `JARVIS` is configured as a callsign by default
 - phase lines, TRPs, and MGRS are not implemented yet
-- typed locations are currently derived from the legacy grid strings
+- patrol routes currently support a start sector plus one end sector
 - `LOITER` and `MARK` are parser-level improvements, but they still map onto the existing swarm behaviors underneath

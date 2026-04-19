@@ -14,6 +14,17 @@ from typing import Tuple
 
 
 DISPLAY_ROWS = ["Alpha", "Bravo", "Charlie", "Delta", "Echo", "Foxtrot", "Golf", "Hotel"]
+DISPLAY_ROW_LOOKUP = {label.upper(): index for index, label in enumerate(DISPLAY_ROWS)}
+DISPLAY_NUMBER_WORDS = {
+    "ONE": 1,
+    "TWO": 2,
+    "THREE": 3,
+    "FOUR": 4,
+    "FIVE": 5,
+    "SIX": 6,
+    "SEVEN": 7,
+    "EIGHT": 8,
+}
 
 
 class ContinuousCoordinateSpace:
@@ -68,37 +79,74 @@ class ContinuousCoordinateSpace:
         row, col = self.display_sector_indices(position)
         return f"{DISPLAY_ROWS[row]}-{col + 1}"
 
-    def location_to_point(self, raw_location: str | None) -> Tuple[float, float]:
-        """
-        Map a coarse textual mission target to a continuous point.
+    def sector_center(self, row_idx: int, col_idx: int) -> Tuple[float, float]:
+        """Return the continuous-space center of a single 8x8 display sector."""
+        safe_row = max(0, min(self.DISPLAY_GRID_SIZE - 1, int(row_idx)))
+        safe_col = max(0, min(self.DISPLAY_GRID_SIZE - 1, int(col_idx)))
+        return self.clamp_position(
+            (safe_col + 0.5) * self.DISPLAY_CELL_SIZE,
+            (safe_row + 0.5) * self.DISPLAY_CELL_SIZE,
+        )
 
-        Supported examples:
-        - `Grid Alpha`
-        - `Grid Bravo`
-        - `Grid Charlie`
-        - `Grid Alpha 1`
-        - `Grid Bravo 2`
-        - `Grid Charlie 3`
-        """
+    def location_to_display_indices(self, raw_location: str | None) -> Tuple[int, int | None] | None:
+        """Parse spoken/display sector labels into `(row, column)` display indices."""
         if not raw_location:
-            return (self.SPACE_SIZE / 2.0, self.SPACE_SIZE / 2.0)
+            return None
 
         normalized = re.sub(r"[^A-Z0-9]+", " ", raw_location.upper()).strip()
         parts = normalized.split()
         if not parts:
-            return (self.SPACE_SIZE / 2.0, self.SPACE_SIZE / 2.0)
+            return None
 
-        if parts[0] == "GRID":
+        while parts and parts[0] in {"GRID", "SECTOR"}:
             parts = parts[1:]
 
-        col_lookup = {"ALPHA": 0, "BRAVO": 1, "CHARLIE": 2}
-        col_idx = col_lookup.get(parts[0], 1)
-        row_idx = 1
+        if not parts:
+            return None
 
-        if len(parts) > 1 and parts[1].isdigit():
-            row_idx = max(0, min(2, int(parts[1]) - 1))
+        row_idx = DISPLAY_ROW_LOOKUP.get(parts[0])
+        if row_idx is None:
+            return None
 
-        third = self.SPACE_SIZE / 3.0
-        x = third * (col_idx + 0.5)
-        y = third * (row_idx + 0.5)
-        return self.clamp_position(x, y)
+        if len(parts) == 1:
+            return row_idx, None
+
+        column_token = parts[1]
+        if column_token.isdigit():
+            column_number = int(column_token)
+        else:
+            column_number = DISPLAY_NUMBER_WORDS.get(column_token, 0)
+
+        if column_number <= 0:
+            return row_idx, None
+
+        col_idx = max(0, min(self.DISPLAY_GRID_SIZE - 1, column_number - 1))
+        return row_idx, col_idx
+
+    def location_to_point(self, raw_location: str | None) -> Tuple[float, float]:
+        """
+        Map a spoken/display mission target to a continuous point.
+
+        Supported examples:
+        - `Grid Alpha`
+        - `Grid Bravo`
+        - `Grid Hotel`
+        - `Grid Alpha 1`
+        - `Grid Delta 6`
+        - `Grid Hotel 8`
+        """
+        if not raw_location:
+            return (self.SPACE_SIZE / 2.0, self.SPACE_SIZE / 2.0)
+
+        indices = self.location_to_display_indices(raw_location)
+        if indices is None:
+            return (self.SPACE_SIZE / 2.0, self.SPACE_SIZE / 2.0)
+
+        row_idx, col_idx = indices
+        if col_idx is None:
+            return self.clamp_position(
+                self.SPACE_SIZE / 2.0,
+                (row_idx + 0.5) * self.DISPLAY_CELL_SIZE,
+            )
+
+        return self.sector_center(row_idx, col_idx)

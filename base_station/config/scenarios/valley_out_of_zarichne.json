@@ -1,0 +1,426 @@
+{
+  "scenario": "Valley Out of Zarichne",
+  "timestamp_ms": 0,
+  "coordinate_space_size": 1000,
+  "map_overlay": {
+    "asset_url": "http://100.71.205.85:8000/scenario-assets/overlay-88802b175eaf4a9cb67f0633111d9680.png",
+    "asset_path": "scenario_assets/overlay-88802b175eaf4a9cb67f0633111d9680.png",
+    "opacity": 0.72,
+    "visible": true
+  },
+  "drones": [
+    {
+      "id": "soldier-1",
+      "label": "Soldier Operator 1",
+      "type": "soldier",
+      "role": "operator-node",
+      "behavior": "lurk",
+      "position": [
+        88.67070962985693,
+        936.0288187885925
+      ],
+      "transmission_range": 400.0,
+      "render": {
+        "shape": "square",
+        "color": "#8B5CF6",
+        "radius": 14
+      },
+      "status": "active"
+    },
+    {
+      "id": "soldier-2",
+      "label": "Soldier Operator 2",
+      "type": "soldier",
+      "role": "operator-node",
+      "behavior": "lurk",
+      "position": [
+        27.006307762953607,
+        894.6190919409232
+      ],
+      "transmission_range": 400.0,
+      "render": {
+        "shape": "square",
+        "color": "#8B5CF6",
+        "radius": 14
+      },
+      "status": "active"
+    },
+    {
+      "id": "soldier-3",
+      "label": "Soldier Operator 3",
+      "type": "soldier",
+      "role": "operator-node",
+      "behavior": "lurk",
+      "position": [
+        70.21640619323121,
+        390.0512702338176
+      ],
+      "transmission_range": 400.0,
+      "render": {
+        "shape": "square",
+        "color": "#8B5CF6",
+        "radius": 14
+      },
+      "status": "active"
+    },
+    {
+      "id": "soldier-4",
+      "label": "Soldier Operator 4",
+      "type": "soldier",
+      "role": "operator-node",
+      "behavior": "lurk",
+      "position": [
+        175.9911030130588,
+        898.219946712102
+      ],
+      "transmission_range": 400.0,
+      "render": {
+        "shape": "square",
+        "color": "#8B5CF6",
+        "radius": 14
+      },
+      "status": "active"
+    },
+    {
+      "id": "recon-1",
+      "label": "Recon Drone 1",
+      "type": "recon",
+      "role": "recon-drone",
+      "behavior": "lurk",
+      "position": [
+        119.27786357891544,
+        442.7135738056067
+      ],
+      "transmission_range": 170.0,
+      "render": {
+        "shape": "triangle",
+        "color": "#7DD3FC",
+        "radius": 13
+      },
+      "detection_radius": 220.0,
+      "speed": 95.0,
+      "status": "active"
+    },
+    {
+      "id": "recon-2",
+      "label": "Recon Drone 2",
+      "type": "recon",
+      "role": "recon-drone",
+      "behavior": "lurk",
+      "position": [
+        162.487949131582,
+        845.557651725387
+      ],
+      "transmission_range": 170.0,
+      "render": {
+        "shape": "triangle",
+        "color": "#7DD3FC",
+        "radius": 13
+      },
+      "detection_radius": 220.0,
+      "speed": 95.0,
+      "status": "active"
+    },
+    {
+      "id": "attack-1",
+      "label": "Attack Drone 1",
+      "type": "attack",
+      "role": "attack-drone",
+      "behavior": "lurk",
+      "position": [
+        88.67070962985693,
+        878.4153484915065
+      ],
+      "transmission_range": 160.0,
+      "render": {
+        "shape": "star",
+        "color": "#7DD3FC",
+        "radius": 15
+      },
+      "speed": 120.0,
+      "status": "active"
+    },
+    {
+      "id": "compute-1",
+      "label": "Compute Drone 1",
+      "type": "compute",
+      "role": "compute-drone",
+      "behavior": "lurk",
+      "position": [
+        49.06146167822126,
+        853.2094509439942
+      ],
+      "transmission_range": 900.0,
+      "render": {
+        "shape": "diamond",
+        "color": "#1E3A8A",
+        "radius": 16
+      },
+      "status": "active"
+    },
+    {
+      "id": "compute-2",
+      "label": "Compute Drone 2",
+      "type": "compute",
+      "role": "compute-drone",
+      "behavior": "lurk",
+      "position": [
+        144.03364569495625,
+        391.85167615672196
+      ],
+      "transmission_range": 900.0,
+      "render": {
+        "shape": "diamond",
+        "color": "#1E3A8A",
+        "radius": 16
+      },
+      "status": "active"
+    },
+    {
+      "id": "attack-2",
+      "label": "Attack Drone 2",
+      "type": "attack",
+      "role": "attack-drone",
+      "behavior": "lurk",
+      "position": [
+        133.23111572171558,
+        343.69042387875845
+      ],
+      "transmission_range": 160.0,
+      "render": {
+        "shape": "star",
+        "color": "#7DD3FC",
+        "radius": 15
+      },
+      "speed": 120.0,
+      "status": "active"
+    },
+    {
+      "id": "attack-3",
+      "label": "Attack Drone 3",
+      "type": "attack",
+      "role": "attack-drone",
+      "behavior": "lurk",
+      "position": [
+        183.64289364659194,
+        427.8600693371788
+      ],
+      "transmission_range": 160.0,
+      "render": {
+        "shape": "star",
+        "color": "#7DD3FC",
+        "radius": 15
+      },
+      "speed": 120.0,
+      "status": "active"
+    },
+    {
+      "id": "attack-4",
+      "label": "Attack Drone 4",
+      "type": "attack",
+      "role": "attack-drone",
+      "behavior": "lurk",
+      "position": [
+        690.4612968035915,
+        203.2576404669209
+      ],
+      "transmission_range": 160.0,
+      "render": {
+        "shape": "star",
+        "color": "#7DD3FC",
+        "radius": 15
+      },
+      "speed": 120.0,
+      "status": "active"
+    },
+    {
+      "id": "attack-5",
+      "label": "Attack Drone 5",
+      "type": "attack",
+      "role": "attack-drone",
+      "behavior": "lurk",
+      "position": [
+        645.9008477863628,
+        178.0517429194087
+      ],
+      "transmission_range": 160.0,
+      "render": {
+        "shape": "star",
+        "color": "#7DD3FC",
+        "radius": 15
+      },
+      "speed": 120.0,
+      "status": "active"
+    },
+    {
+      "id": "attack-6",
+      "label": "Attack Drone 6",
+      "type": "attack",
+      "role": "attack-drone",
+      "behavior": "lurk",
+      "position": [
+        606.2916513451712,
+        178.95195661220342
+      ],
+      "transmission_range": 160.0,
+      "render": {
+        "shape": "star",
+        "color": "#7DD3FC",
+        "radius": 15
+      },
+      "speed": 120.0,
+      "status": "active"
+    },
+    {
+      "id": "attack-7",
+      "label": "Attack Drone 7",
+      "type": "attack",
+      "role": "attack-drone",
+      "behavior": "lurk",
+      "position": [
+        523.4722663304248,
+        463.4183985966083
+      ],
+      "transmission_range": 160.0,
+      "render": {
+        "shape": "star",
+        "color": "#7DD3FC",
+        "radius": 15
+      },
+      "speed": 120.0,
+      "status": "active"
+    },
+    {
+      "id": "attack-8",
+      "label": "Attack Drone 8",
+      "type": "attack",
+      "role": "attack-drone",
+      "behavior": "lurk",
+      "position": [
+        450.55524910656857,
+        471.97040292293616
+      ],
+      "transmission_range": 160.0,
+      "render": {
+        "shape": "star",
+        "color": "#7DD3FC",
+        "radius": 15
+      },
+      "speed": 120.0,
+      "status": "active"
+    },
+    {
+      "id": "attack-9",
+      "label": "Attack Drone 9",
+      "type": "attack",
+      "role": "attack-drone",
+      "behavior": "lurk",
+      "position": [
+        388.44072751565676,
+        469.26977901469996
+      ],
+      "transmission_range": 160.0,
+      "render": {
+        "shape": "star",
+        "color": "#7DD3FC",
+        "radius": 15
+      },
+      "speed": 120.0,
+      "status": "active"
+    }
+  ],
+  "enemies": [
+    {
+      "id": "enemy-infantry-1776605948037-1",
+      "label": "Enemy Infantry 1",
+      "subtype": "infantry",
+      "status": "active",
+      "position": [
+        964.1252292043066,
+        646.6112111520249
+      ],
+      "revealed": false
+    },
+    {
+      "id": "enemy-infantry-1776605949554-2",
+      "label": "Enemy Infantry 2",
+      "subtype": "infantry",
+      "status": "active",
+      "position": [
+        850.2486177344003,
+        643.010356380846
+      ],
+      "revealed": false
+    },
+    {
+      "id": "enemy-infantry-1776605950911-3",
+      "label": "Enemy Infantry 3",
+      "subtype": "infantry",
+      "status": "active",
+      "position": [
+        745.8242414537648,
+        643.010356380846
+      ],
+      "revealed": false
+    },
+    {
+      "id": "enemy-vehicle-1776605969104-4",
+      "label": "Enemy Vehicle 4",
+      "subtype": "vehicle",
+      "status": "active",
+      "position": [
+        962.3247674784209,
+        706.4751942184128
+      ],
+      "revealed": false
+    },
+    {
+      "id": "enemy-vehicle-1776605970780-5",
+      "label": "Enemy Vehicle 5",
+      "subtype": "vehicle",
+      "status": "active",
+      "position": [
+        847.9980920874876,
+        699.273484676055
+      ],
+      "revealed": false
+    },
+    {
+      "id": "enemy-vehicle-1776605972396-6",
+      "label": "Enemy Vehicle 6",
+      "subtype": "vehicle",
+      "status": "active",
+      "position": [
+        721.5185232587512,
+        708.7257198653257
+      ],
+      "revealed": false
+    },
+    {
+      "id": "enemy-vehicle-1776605979688-7",
+      "label": "Enemy Vehicle 7",
+      "subtype": "vehicle",
+      "status": "active",
+      "position": [
+        607.1918478678178,
+        704.6747324925273
+      ],
+      "revealed": false
+    },
+    {
+      "id": "enemy-tank-1776606020832-8",
+      "label": "Enemy Tank 8",
+      "subtype": "tank",
+      "status": "active",
+      "position": [
+        495.1156637835012,
+        703.7745359698805
+      ],
+      "revealed": false
+    }
+  ],
+  "structures": [],
+  "special_entities": [],
+  "transmission_graph": [],
+  "initial_events": []
+}

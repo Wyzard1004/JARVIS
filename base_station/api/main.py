@@ -361,19 +361,24 @@ def mock_parse_intent(payload: Dict) -> Dict:
     transcribed_text = (payload.get("transcribed_text") or "").strip()
     normalized = transcribed_text.lower()
     origin = _default_operator_origin(transcribed_text, payload)
+    parsed_command = payload.get("parsed_command")
+    if not parsed_command and transcribed_text:
+        parsed_command = process_voice_command(transcribed_text)
 
-    target_location = payload.get("target_location") or payload.get("target")
+    target_location = (
+        payload.get("target_location")
+        or payload.get("target")
+        or _humanize_location((parsed_command or {}).get("target_location"))
+    )
     if not target_location:
-        if "bravo" in normalized:
-            target_location = "Grid Bravo"
-        elif "charlie" in normalized:
-            target_location = "Grid Charlie"
-        else:
-            target_location = "Grid Alpha"
+        target_location = "Grid Alpha"
 
     action_code = payload.get("action_code") or payload.get("action")
     if not action_code:
-        if any(token in normalized for token in {"engage", "strike", "fire", "tank", "armor"}):
+        parsed_goal = (parsed_command or {}).get("goal")
+        if parsed_goal and str(parsed_goal).upper() != "NO_OP":
+            action_code = _action_code_from_goal(parsed_goal)
+        elif any(token in normalized for token in {"engage", "strike", "fire", "tank", "armor"}):
             action_code = "ENGAGE_TARGET"
         elif any(token in normalized for token in {"sync", "rally", "regroup"}):
             action_code = "SYNC"
@@ -385,6 +390,7 @@ def mock_parse_intent(payload: Dict) -> Dict:
     return {
         "intent": payload.get("intent", "swarm_redeploy"),
         "target_location": target_location,
+        "patrol_end_location": _humanize_location((parsed_command or {}).get("patrol_end_location")) or payload.get("patrol_end_location"),
         "action_code": action_code,
         "confidence": float(payload.get("confidence", 0.82)),
         "consensus_algorithm": payload.get("consensus_algorithm") or payload.get("algorithm") or "gossip",
@@ -392,7 +398,7 @@ def mock_parse_intent(payload: Dict) -> Dict:
         "operator_node": origin,
         "network_conditions": payload.get("network_conditions", {}),
         "transcribed_text": transcribed_text,
-        "parsed_command": payload.get("parsed_command"),
+        "parsed_command": parsed_command,
     }
 
 
@@ -512,11 +518,13 @@ def _to_swarm_intent(parsed_command: Dict, transcribed_text: str, payload: Dict 
     goal = parsed_command.get("goal", "NO_OP")
     target_location = parsed_command.get("target_location")
     avoid_location = parsed_command.get("avoid_location")
+    patrol_end_location = parsed_command.get("patrol_end_location")
     origin = _default_operator_origin(transcribed_text, payload)
 
     return {
         "intent": parsed_command.get("intent", payload.get("intent", "swarm_command")),
         "target_location": _humanize_location(target_location or avoid_location) or payload.get("target_location") or payload.get("target"),
+        "patrol_end_location": _humanize_location(patrol_end_location) or payload.get("patrol_end_location") or payload.get("target_location_end"),
         "action_code": payload.get("action_code") or payload.get("action") or _action_code_from_goal(goal),
         "confidence": float(parsed_command.get("confidence", payload.get("confidence", 0.82))),
         "consensus_algorithm": payload.get("consensus_algorithm") or payload.get("algorithm") or "gossip",
@@ -528,6 +536,7 @@ def _to_swarm_intent(parsed_command: Dict, transcribed_text: str, payload: Dict 
         "callsign": parsed_command.get("callsign", payload.get("callsign")),
         "target_location_detail": parsed_command.get("target_location_detail"),
         "avoid_location_detail": parsed_command.get("avoid_location_detail"),
+        "patrol_end_location_detail": parsed_command.get("patrol_end_location_detail"),
         "confirmation_required": bool(parsed_command.get("confirmation_required", False)),
         "execution_state": parsed_command.get("execution_state", "NONE"),
     }
@@ -554,11 +563,18 @@ def _get_drone_type(node_id: str) -> str:
     return "unknown"
 
 
-def _simulate_enemies_and_attacks(target_location: str, active_nodes: list, propagation_order: list) -> Dict:
+def _simulate_enemies_and_attacks(
+    target_location: str,
+    active_nodes: list,
+    propagation_order: list,
+    mission_status: str | None = None,
+) -> Dict:
     """Simulate enemy detection and attack drone sequencing based on command."""
     import random
     import math
-    
+
+    engagement_active = (mission_status or "").lower() == "engaging"
+
     # Simulate enemy positions near target
     enemies = []
     if target_location:
@@ -578,20 +594,19 @@ def _simulate_enemies_and_attacks(target_location: str, active_nodes: list, prop
                 "detected_by": "recon-1",  # Recon detected it
                 "detected_ms": random.randint(50, 150)
             })
-    
-    # Simulate attack drone sequencing
+
     attack_drones = [n for n in active_nodes if "attack" in n]
     attack_queue = []
-    for idx, drone in enumerate(sorted(attack_drones)):
-        attack_queue.append({
-            "drone": drone,
-            "sequence": idx + 1,
-            "target_enemy": enemies[idx % len(enemies)] if enemies else None,
-            "status": "queued" if idx > 0 else "engaging",
-            "impacts": random.randint(1, 2) if idx == 0 else 0
-        })
-    
-    # Simulate recon scanning
+    if engagement_active:
+        for idx, drone in enumerate(sorted(attack_drones)):
+            attack_queue.append({
+                "drone": drone,
+                "sequence": idx + 1,
+                "target_enemy": enemies[idx % len(enemies)] if enemies else None,
+                "status": "queued" if idx > 0 else "engaging",
+                "impacts": random.randint(1, 2) if idx == 0 else 0
+            })
+
     recon_status = {
         "drone": "recon-1",
         "scanning": "recon-1" in active_nodes,
@@ -599,13 +614,11 @@ def _simulate_enemies_and_attacks(target_location: str, active_nodes: list, prop
         "last_scan_ms": random.randint(80, 200) if enemies else 0,
         "coverage_percent": 85 if enemies else 0
     }
-    
-    # Simulate operator signaling flow: recon → operators → attack drones
+
     operator_signals = []
     if enemies and "recon-1" in active_nodes:
         operators = [n for n in active_nodes if "soldier" in n]
-        
-        # Phase 1: Recon reports to operators (~150ms)
+
         for op in operators:
             operator_signals.append({
                 "phase": "recon_to_operators",
@@ -615,19 +628,18 @@ def _simulate_enemies_and_attacks(target_location: str, active_nodes: list, prop
                 "start_time_ms": 100 + random.randint(0, 50),
                 "end_time_ms": 150 + random.randint(0, 30)
             })
-        
-        # Phase 2: Operators signal attack drones (~250ms)
-        for idx, drone in enumerate(attack_drones):
-            op = operators[idx % len(operators)]
-            operator_signals.append({
-                "phase": "operators_to_attacks",
-                "from": op,
-                "to": drone,
-                "data": f"engage_target: {idx+1}",
-                "start_time_ms": 200 + (idx * 50),
-                "end_time_ms": 280 + (idx * 50)
-            })
-    
+        if engagement_active and operators:
+            for idx, drone in enumerate(attack_drones):
+                op = operators[idx % len(operators)]
+                operator_signals.append({
+                    "phase": "operators_to_attacks",
+                    "from": op,
+                    "to": drone,
+                    "data": f"engage_target: {idx+1}",
+                    "start_time_ms": 200 + (idx * 50),
+                    "end_time_ms": 280 + (idx * 50)
+                })
+
     return {
         "enemies": enemies,
         "attack_queue": attack_queue,
@@ -723,7 +735,12 @@ def _build_lean_ui_event(
     
     # Simulate enemy detection and attacks
     target_location = consensus_result.get("target_location", "")
-    sim_data = _simulate_enemies_and_attacks(target_location, active_nodes, prop_order)
+    sim_data = _simulate_enemies_and_attacks(
+        target_location,
+        active_nodes,
+        prop_order,
+        consensus_result.get("status"),
+    )
     
     # Simulate signal animations
     signal_animations = _simulate_signal_animations(prop_order, edges)

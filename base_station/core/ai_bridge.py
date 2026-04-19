@@ -36,22 +36,40 @@ DEFAULT_CALLSIGNS = [
     "JARVIS",
 ]
 
-DEFAULT_LOCATIONS = [
-    # Coarse-grained sectors
-    "GRID_ALPHA",
-    "GRID_BRAVO",
-    "GRID_CHARLIE",
-    # Fine-grained numbered sectors (Alpha 1-3, Bravo 1-3, Charlie 1-3)
-    "GRID_ALPHA_1",
-    "GRID_ALPHA_2",
-    "GRID_ALPHA_3",
-    "GRID_BRAVO_1",
-    "GRID_BRAVO_2",
-    "GRID_BRAVO_3",
-    "GRID_CHARLIE_1",
-    "GRID_CHARLIE_2",
-    "GRID_CHARLIE_3",
+DISPLAY_SECTORS = [
+    "ALPHA",
+    "BRAVO",
+    "CHARLIE",
+    "DELTA",
+    "ECHO",
+    "FOXTROT",
+    "GOLF",
+    "HOTEL",
 ]
+
+DISPLAY_NUMBER_WORDS = {
+    "1": "one",
+    "2": "two",
+    "3": "three",
+    "4": "four",
+    "5": "five",
+    "6": "six",
+    "7": "seven",
+    "8": "eight",
+}
+
+
+def _default_locations() -> list[str]:
+    locations: list[str] = []
+    for sector in DISPLAY_SECTORS:
+        locations.append(f"GRID_{sector}")
+    for sector in DISPLAY_SECTORS:
+        for column in range(1, 9):
+            locations.append(f"GRID_{sector}_{column}")
+    return locations
+
+
+DEFAULT_LOCATIONS = _default_locations()
 
 SCHEMA_VERSION = "2.0"
 ELEVENLABS_STT_MODEL = "scribe_v2"
@@ -115,6 +133,8 @@ def _build_schema() -> dict[str, Any]:
             "avoid_location": {"anyOf": nullable_locations},
             "target_location_detail": {"anyOf": nullable_location_details},
             "avoid_location_detail": {"anyOf": nullable_location_details},
+            "patrol_end_location": {"anyOf": nullable_locations},
+            "patrol_end_location_detail": {"anyOf": nullable_location_details},
             "confidence": {"type": "number", "minimum": 0, "maximum": 1},
             "confirmation_required": {"type": "boolean"},
             "execution_state": {"type": "string", "enum": EXECUTION_STATES},
@@ -187,30 +207,23 @@ def _goal_requires_avoid(goal: str) -> bool:
 def _location_aliases() -> dict[str, str]:
     """Build comprehensive location aliases including number word variants."""
     aliases: dict[str, str] = {}
-    
-    # Map digits to their word forms
-    digit_to_word = {
-        "1": "one",
-        "2": "two",
-        "3": "three"
-    }
-    
+
     for canonical in ALLOWED_LOCATIONS:
         # Standard aliases
         human = canonical.lower().replace("_", " ")
         aliases[human] = canonical
         aliases[canonical.lower()] = canonical
-        
+
         # Compact versions (remove "grid " and "sector " prefixes)
         compact = human
         if compact.startswith("grid "):
             compact = compact[5:]  # Remove "grid " prefix
         if compact.startswith("sector "):
             compact = compact[7:]  # Remove "sector " prefix
-        
+
         aliases[compact] = canonical
         aliases[f"sector {compact}"] = canonical
-        
+
         # Add variants with dashes and underscores
         compact_dash = compact.replace(" ", "-")
         compact_underscore = compact.replace(" ", "_")
@@ -218,42 +231,51 @@ def _location_aliases() -> dict[str, str]:
         aliases[compact_underscore] = canonical
         aliases[f"sector-{compact_dash}"] = canonical
         aliases[f"sector_{compact_underscore}"] = canonical
-        
+
         # For numbered locations, add digit↔word variants
         # E.g., "bravo 2" ↔ "bravo two"
-        has_digit = any(digit in compact for digit in "123")
-        
+        has_digit = any(digit in compact for digit in DISPLAY_NUMBER_WORDS)
+
         if has_digit:
-            # Replace digits with words: "bravo 2" → "bravo two"
-            for digit, word in digit_to_word.items():
+            for digit, word in DISPLAY_NUMBER_WORDS.items():
                 if digit in compact:
                     variant_word = compact.replace(digit, word)
                     aliases[variant_word] = canonical
                     aliases[f"sector {variant_word}"] = canonical
-                    # Also with separators
                     aliases[variant_word.replace(" ", "-")] = canonical
                     aliases[variant_word.replace(" ", "_")] = canonical
-    
+
     return aliases
 
 
-def _find_location_in_text(text: str) -> str | None:
-    """Find location in text, preferring longer/more specific matches."""
+def _find_location_mentions(text: str) -> list[str]:
+    """Find non-overlapping location mentions in the order they appear."""
     lowered = text.lower()
-    
-    # Find ALL matching aliases and return the longest one
-    # (prefer "bravo 2" over "bravo")
-    best_match = None
-    best_length = 0
-    
-    for alias, canonical in LOCATION_ALIASES.items():
-        if alias and alias in lowered:
-            # Prefer longer aliases to avoid partial matches
-            if len(alias) > best_length:
-                best_match = canonical
-                best_length = len(alias)
-    
-    return best_match
+    matches: list[tuple[int, int, str]] = []
+
+    for alias, canonical in sorted(LOCATION_ALIASES.items(), key=lambda item: len(item[0]), reverse=True):
+        if not alias:
+            continue
+
+        pattern = rf"(?<![a-z0-9]){re.escape(alias)}(?![a-z0-9])"
+        for match in re.finditer(pattern, lowered):
+            start, end = match.span()
+            overlaps = any(not (end <= existing_start or start >= existing_end) for existing_start, existing_end, _ in matches)
+            if overlaps:
+                continue
+            matches.append((start, end, canonical))
+
+    ordered_mentions: list[str] = []
+    for _, _, canonical in sorted(matches, key=lambda item: item[0]):
+        if not ordered_mentions or ordered_mentions[-1] != canonical:
+            ordered_mentions.append(canonical)
+    return ordered_mentions
+
+
+def _find_location_in_text(text: str) -> str | None:
+    """Find the first resolved location mention in the utterance."""
+    mentions = _find_location_mentions(text)
+    return mentions[0] if mentions else None
 
 
 def _extract_callsign(text: str) -> tuple[str, str]:
@@ -286,6 +308,8 @@ def build_safe_fallback() -> dict[str, Any]:
         "avoid_location": None,
         "target_location_detail": None,
         "avoid_location_detail": None,
+        "patrol_end_location": None,
+        "patrol_end_location_detail": None,
         "confidence": 0.0,
         "confirmation_required": False,
         "execution_state": "NONE",
@@ -296,6 +320,9 @@ def build_safe_fallback() -> dict[str, Any]:
 def normalize_command(payload: dict[str, Any]) -> dict[str, Any]:
     target_location = _canonicalize_location(payload.get("target_location"))
     avoid_location = _canonicalize_location(payload.get("avoid_location"))
+    patrol_end_location = _canonicalize_location(
+        payload.get("patrol_end_location") or payload.get("target_location_end")
+    )
     normalized = {
         "schema_version": str(payload.get("schema_version") or SCHEMA_VERSION),
         "callsign": _canonicalize_callsign(payload.get("callsign")),
@@ -305,6 +332,8 @@ def normalize_command(payload: dict[str, Any]) -> dict[str, Any]:
         "avoid_location": avoid_location,
         "target_location_detail": payload.get("target_location_detail") or _build_location_detail(target_location),
         "avoid_location_detail": payload.get("avoid_location_detail") or _build_location_detail(avoid_location),
+        "patrol_end_location": patrol_end_location,
+        "patrol_end_location_detail": payload.get("patrol_end_location_detail") or _build_location_detail(patrol_end_location),
         "confidence": payload.get("confidence", 0.0),
         "confirmation_required": bool(payload.get("confirmation_required", False)),
         "execution_state": str(payload.get("execution_state") or "NONE").upper(),
@@ -345,6 +374,15 @@ def validate_command(payload: dict[str, Any]) -> dict[str, Any]:
         normalized["avoid_location"] = None
         normalized["target_location_detail"] = None
         normalized["avoid_location_detail"] = None
+        normalized["patrol_end_location"] = None
+        normalized["patrol_end_location_detail"] = None
+
+    if normalized["patrol_end_location"] and normalized["goal"] != "SCAN_AREA":
+        normalized["patrol_end_location"] = None
+        normalized["patrol_end_location_detail"] = None
+
+    if normalized["patrol_end_location"] and not normalized["target_location"]:
+        return build_safe_fallback()
 
     if normalized["goal"] == "ATTACK_AREA":
         normalized["confirmation_required"] = True
@@ -373,7 +411,8 @@ def parse_with_rules(text: str) -> dict[str, Any] | None:
     if not lowered:
         return None
 
-    location = _find_location_in_text(lowered)
+    location_mentions = _find_location_mentions(lowered)
+    location = location_mentions[0] if location_mentions else None
     base_payload = {
         "callsign": callsign,
         "terminal_proword": terminal_proword,
@@ -447,6 +486,19 @@ def parse_with_rules(text: str) -> dict[str, Any] | None:
                 "confidence": 0.97,
             }
         )
+
+    if "patrol" in lowered:
+        if not location:
+            return None
+        payload = {
+            **base_payload,
+            "goal": "SCAN_AREA",
+            "target_location": location_mentions[0],
+            "confidence": 0.95,
+        }
+        if len(location_mentions) > 1:
+            payload["patrol_end_location"] = location_mentions[-1]
+        return validate_command(payload)
 
     if any(
         term in lowered
@@ -536,7 +588,9 @@ def _ollama_messages(text: str) -> list[dict[str, str]]:
                 f"Allowed locations: {', '.join(ALLOWED_LOCATIONS)}. "
                 "Prefer commands in the form '[CALLSIGN] [ACTION] [LOCATION] OVER'. "
                 "If the request is unclear or unsafe, return goal NO_OP with null locations. "
-                "ATTACK_AREA must set confirmation_required true and execution_state PENDING_EXECUTE."
+                "ATTACK_AREA must set confirmation_required true and execution_state PENDING_EXECUTE. "
+                "Recon patrol routes should use goal SCAN_AREA with target_location as the start "
+                "and patrol_end_location as the end."
             ),
         },
         {
@@ -546,6 +600,7 @@ def _ollama_messages(text: str) -> list[dict[str, str]]:
                 f"Operator text: {text}\n"
                 "Return only one JSON object. "
                 "Examples: 'JARVIS, move to Sector Bravo 3, over.' "
+                "'JARVIS, recon patrol Bravo 1 to Bravo 3, over.' "
                 "'JARVIS, all units, abort, out.' "
                 "'JARVIS, execute, over.'"
             ),
@@ -650,6 +705,7 @@ def create_confirmation_text(command: dict[str, Any]) -> str:
     goal = command.get("goal")
     target = command.get("target_location")
     avoid = command.get("avoid_location")
+    patrol_end = command.get("patrol_end_location")
     callsign = command.get("callsign") or _default_callsign()
     execution_state = command.get("execution_state")
 
@@ -666,6 +722,8 @@ def create_confirmation_text(command: dict[str, Any]) -> str:
         return f"{callsign}, attacking {humanize(target)}, over."
     if goal == "AVOID_AREA" and avoid:
         return f"{callsign}, avoiding {humanize(avoid)}, over."
+    if goal == "SCAN_AREA" and target and patrol_end:
+        return f"{callsign}, recon patrol from {humanize(target)} to {humanize(patrol_end)}, over."
     if goal == "SCAN_AREA" and target:
         return f"{callsign}, scanning {humanize(target)}, over."
     if goal == "LOITER" and target:

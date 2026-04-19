@@ -983,6 +983,67 @@ class SwarmCoordinator:
             return [current]
         return [current, *loop, loop[0]]
 
+    def _midpoint(
+        self,
+        start: Tuple[float, float],
+        end: Tuple[float, float],
+    ) -> Tuple[float, float]:
+        return self.space.clamp_position(
+            (start[0] + end[0]) / 2.0,
+            (start[1] + end[1]) / 2.0,
+        )
+
+    def _display_sector_route(
+        self,
+        start_location: str | None,
+        end_location: str | None,
+    ) -> List[Tuple[int, int]]:
+        start_indices = self.space.location_to_display_indices(start_location)
+        end_indices = self.space.location_to_display_indices(end_location)
+        if start_indices is None or end_indices is None:
+            return []
+
+        start_row, start_col = start_indices
+        end_row, end_col = end_indices
+        if start_col is None or end_col is None:
+            return []
+
+        row = start_row
+        col = start_col
+        route = [(row, col)]
+
+        while (row, col) != (end_row, end_col):
+            if row != end_row:
+                row += 1 if end_row > row else -1
+            if col != end_col:
+                col += 1 if end_col > col else -1
+            route.append((row, col))
+
+        return route
+
+    def _patrol_route_waypoints(
+        self,
+        node_id: str,
+        start_location: str | None,
+        end_location: str | None,
+    ) -> List[Tuple[float, float]]:
+        route = self._display_sector_route(start_location, end_location)
+        if not route:
+            return self._patrol_waypoints(node_id, self.space.location_to_point(start_location), radius=90.0)
+
+        current = self._current_position(node_id)
+        centers = [self.space.sector_center(row, col) for row, col in route]
+        waypoints = [current]
+
+        for point in [*centers, *reversed(centers[:-1])]:
+            if self.space.distance(waypoints[-1], point) > 1e-6:
+                waypoints.append(point)
+
+        if len(waypoints) == 1 and centers:
+            waypoints.append(centers[0])
+
+        return waypoints
+
     def _retreat_destination(
         self,
         node_id: str,
@@ -1039,10 +1100,20 @@ class SwarmCoordinator:
     ) -> Tuple[str, Dict, List[Dict]]:
         action_code = str(swarm_intent.get("action_code") or "NO_OP").upper()
         target_location = swarm_intent.get("target_location")
+        patrol_end_location = swarm_intent.get("patrol_end_location")
         origin = self._resolve_origin_node(swarm_intent.get("origin") or swarm_intent.get("operator_node"))
         timestamp_ms = int(datetime.now().timestamp() * 1000)
         control_position = self._current_position(control_node)
         active_set = list(dict.fromkeys(active_nodes or [origin]))
+        patrol_end_position = self.space.location_to_point(patrol_end_location) if patrol_end_location else None
+        mission_focus_position = (
+            self._midpoint(target_position, patrol_end_position)
+            if patrol_end_position is not None
+            else target_position
+        )
+        command_location_label = target_location or self.space.display_sector_label(target_position)
+        if patrol_end_location:
+            command_location_label = f"{command_location_label} to {patrol_end_location}"
 
         soldiers = self._node_ids_by_type("soldier", active_set)
         compute_nodes = self._node_ids_by_type("compute", active_set)
@@ -1052,7 +1123,7 @@ class SwarmCoordinator:
 
         target_tasks: List[Dict] = []
         engagements: List[Dict] = []
-        object_reports = self._enemy_reports_near_target(target_position)
+        object_reports = self._enemy_reports_near_target(mission_focus_position)
 
         def assign_behavior(node_id: str, behavior: str, waypoints: Optional[List[Tuple[float, float]]], task_label: str) -> None:
             previous_behavior = self._drone_behaviors.get(node_id, {}).get("current", "lurk")
@@ -1071,7 +1142,7 @@ class SwarmCoordinator:
                 timestamp_ms,
                 node_id,
                 grid_position,
-                f"{action_code}:{target_location or self.space.display_sector_label(target_position)}",
+                f"{action_code}:{command_location_label}",
                 True,
             )
 
@@ -1082,6 +1153,7 @@ class SwarmCoordinator:
                     "behavior": behavior,
                     "task": task_label,
                     "target_location": target_location,
+                    "patrol_end_location": patrol_end_location,
                     "target_position": [round(task_destination[0], 2), round(task_destination[1], 2)],
                     "waypoint_count": len(waypoints or []),
                 }
@@ -1095,12 +1167,21 @@ class SwarmCoordinator:
 
         if action_code == "SEARCH":
             mission_status = "searching"
-            objective = f"Search {target_location or self.space.display_sector_label(target_position)}"
-
-            for recon_id in recon_nodes:
-                assign_behavior(recon_id, "patrol", self._patrol_waypoints(recon_id, target_position, radius=110.0), "area_search")
-            for attack_id, destination in zip(attack_nodes, self._formation_points(target_position, len(attack_nodes), 130.0)):
-                assign_behavior(attack_id, "transit", self._transit_waypoints(attack_id, destination), "attack_staging")
+            if patrol_end_location:
+                objective = f"Recon patrol from {target_location} to {patrol_end_location}"
+                for recon_id in recon_nodes:
+                    assign_behavior(
+                        recon_id,
+                        "patrol",
+                        self._patrol_route_waypoints(recon_id, target_location, patrol_end_location),
+                        "recon_patrol",
+                    )
+            else:
+                objective = f"Search {target_location or self.space.display_sector_label(target_position)}"
+                for recon_id in recon_nodes:
+                    assign_behavior(recon_id, "patrol", self._patrol_waypoints(recon_id, target_position, radius=110.0), "area_search")
+            for attack_id in attack_nodes:
+                hold_node(attack_id, "await_tasking")
             for compute_id in compute_nodes:
                 hold_node(compute_id, "relay_support")
             for soldier_id in soldiers:
@@ -1206,6 +1287,7 @@ class SwarmCoordinator:
             "mission_status": mission_status,
             "objective": objective,
             "target_location": target_location,
+            "patrol_end_location": patrol_end_location,
             "action_code": action_code,
             "origin": origin,
             "target_tasks": target_tasks,
