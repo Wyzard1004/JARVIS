@@ -2,10 +2,14 @@
 
 > Hardware-in-the-loop command, relay, and reconnaissance stack for DDIL swarm demos.
 
+**Live Frontend:** [jarvis-command-center-pearl.vercel.app](https://jarvis-command-center-pearl.vercel.app/)
+
+**Demo Video:** [YouTube walkthrough](https://youtu.be/OGTVvvW-5Rc)
+
 This repository is the current hackathon implementation of JARVIS. The live codebase combines:
 
 - a FastAPI base station that normalizes commands and runs swarm coordination
-- a React command center with a tactical map, scenario tools, and live mission state
+- a React frontend suite with the live command center plus simulation labs for relay doctrine and propagation stress
 - a Jetson-side serial push-to-talk listener that also acts as the local relay bridge
 - ESP32 gateway and field-node firmware that relay commands over ESP-NOW
 - an early compute-drone and image-processing lane that supports the "vision integrated" part of the project story
@@ -113,14 +117,21 @@ The intended deployment direction is:
 ### Frontend
 
 - [command_center/src/App.jsx](command_center/src/App.jsx)
-  - application shell
+  - application shell and page routing
   - WebSocket state handling
   - mission pinning
   - scenario and map editor controls
+  - command center, relay comparison lab, and propagation stress lab views
 - [command_center/src/components/SwarmCanvas.jsx](command_center/src/components/SwarmCanvas.jsx)
   - canvas-based tactical map
   - communication playback overlay
   - continuous-world to 8x8 grid projection
+- [command_center/src/components/ContestedRelayComparisonPage.jsx](command_center/src/components/ContestedRelayComparisonPage.jsx)
+  - centralized-vs-local-autonomy relay doctrine visualization
+  - mirrored hazard / target event comparison
+- [command_center/src/components/SwarmPropagationLabPage.jsx](command_center/src/components/SwarmPropagationLabPage.jsx)
+  - mesh propagation stress simulator
+  - TTL, payload, redundancy, and reroute visualization
 - [command_center/src/components/PushToTalkButton.jsx](command_center/src/components/PushToTalkButton.jsx)
   - browser microphone path
 
@@ -202,6 +213,10 @@ That script opens backend, listener, and frontend terminals for the current demo
 ### Deploy The Command Center On Vercel
 
 Vercel is a good fit for the `command_center` React app, but it is **not a good primary host for the current FastAPI backend**.
+
+Current hosted frontend:
+
+- [https://jarvis-command-center-pearl.vercel.app/](https://jarvis-command-center-pearl.vercel.app/)
 
 Why the split matters:
 
