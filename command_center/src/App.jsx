@@ -12,6 +12,7 @@ import PushToTalkButton from './components/PushToTalkButton'
 import StatusPanel from './components/StatusPanel'
 import SoldierSelector from './components/SoldierSelector'
 import CollapsiblePanel from './components/CollapsiblePanel'
+import ContestedRelayComparisonPage from './components/ContestedRelayComparisonPage'
 import { getEntityDisplayLabel, sanitizeUnitIdentifiers } from './lib/displayNames'
 
 const normalizeBaseUrl = (value) => String(value || '').trim().replace(/\/+$/, '')
@@ -46,6 +47,28 @@ const resolveScenarioAssetUrl = (assetUrl) => {
   if (!assetUrl) return assetUrl
   if (/^https?:\/\//i.test(assetUrl)) return assetUrl
   return joinUrl(API_BASE_URL, assetUrl)
+}
+
+const PAGE_COMMAND_CENTER = 'command-center'
+const PAGE_RELAY_COMPARISON = 'relay-comparison'
+
+const VIEW_OPTIONS = [
+  {
+    id: PAGE_COMMAND_CENTER,
+    label: 'Command Center',
+    subtitle: 'Live swarm control'
+  },
+  {
+    id: PAGE_RELAY_COMPARISON,
+    label: 'Comparison Lab',
+    subtitle: 'Doctrine simulator'
+  }
+]
+
+const getPageFromHash = () => {
+  if (typeof window === 'undefined') return PAGE_COMMAND_CENTER
+  const normalized = String(window.location.hash || '').replace(/^#\/?/, '').trim().toLowerCase()
+  return normalized === PAGE_RELAY_COMPARISON ? PAGE_RELAY_COMPARISON : PAGE_COMMAND_CENTER
 }
 
 const getActiveFullscreenElement = () => {
@@ -564,6 +587,7 @@ const getNextNodeId = (nodes, prefix) => {
 }
 
 function App() {
+  const [activePage, setActivePage] = useState(getPageFromHash)
   const [swarmState, setSwarmState] = useState(null)
   const [scenarioCatalog, setScenarioCatalog] = useState([])
   const [selectedScenarioKey, setSelectedScenarioKey] = useState('')
@@ -605,6 +629,23 @@ function App() {
   const MAX_RECONNECT_ATTEMPTS = 5
   const RECONNECT_DELAY = 2000
 
+  useEffect(() => {
+    const syncPageFromHash = () => {
+      setActivePage(getPageFromHash())
+    }
+
+    window.addEventListener('hashchange', syncPageFromHash)
+    return () => {
+      window.removeEventListener('hashchange', syncPageFromHash)
+    }
+  }, [])
+
+  useEffect(() => {
+    document.title = activePage === PAGE_RELAY_COMPARISON
+      ? 'JARVIS Relay Comparison Lab'
+      : 'JARVIS Command Center'
+  }, [activePage])
+
   const syncScenarioDrafts = (scenarioInfo, options = {}) => {
     const nextScenarioKey = scenarioInfo?.relative_path || ''
     const nextScenarioName = scenarioInfo?.name || 'Blank Workspace'
@@ -635,6 +676,15 @@ function App() {
       ...previous,
       [panelId]: !previous[panelId]
     }))
+  }
+
+  const handlePageChange = (pageId) => {
+    const nextHash = pageId === PAGE_COMMAND_CENTER ? '' : `#${pageId}`
+    if (window.location.hash !== nextHash) {
+      window.location.hash = nextHash
+      return
+    }
+    setActivePage(pageId)
   }
 
   const applyIncomingState = (payload, options = {}) => {
@@ -1333,20 +1383,44 @@ function App() {
   return (
     <div className="app min-h-screen bg-gray-900 text-white">
       <header className="bg-black border-b border-red-500 p-4">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
-            <h1 className="text-3xl font-bold">⚡ JARVIS Command Center</h1>
-            <p className="text-gray-400">Voice-Activated Swarm Coordinator</p>
+            <h1 className="text-3xl font-bold">JARVIS Frontend Suite</h1>
+            <p className="text-gray-400">
+              {activePage === PAGE_RELAY_COMPARISON
+                ? 'Contested relay doctrine and topology comparison'
+                : 'Live swarm command, scenario, and relay control'}
+            </p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {VIEW_OPTIONS.map((view) => {
+                const isActive = activePage === view.id
+                return (
+                  <button
+                    key={view.id}
+                    type="button"
+                    onClick={() => handlePageChange(view.id)}
+                    className={`rounded border px-3 py-2 text-left transition ${
+                      isActive
+                        ? 'border-cyan-400 bg-cyan-500/15 text-cyan-100'
+                        : 'border-gray-700 bg-gray-900 text-gray-300 hover:border-gray-500 hover:bg-gray-800'
+                    }`}
+                  >
+                    <div className="text-xs font-bold uppercase tracking-[0.16em]">{view.label}</div>
+                    <div className="mt-0.5 text-[10px] text-gray-400">{view.subtitle}</div>
+                  </button>
+                )
+              })}
+            </div>
           </div>
-          <div className={`text-center px-4 py-2 rounded ${connectionStatus === 'connected' ? 'bg-green-900 text-green-400' : 'bg-red-900 text-red-400'}`}>
+          <div className={`text-center rounded px-4 py-2 ${connectionStatus === 'connected' ? 'bg-green-900 text-green-400' : 'bg-red-900 text-red-400'}`}>
             <p className="text-sm font-bold">
-              {connectionStatus === 'connected' ? '🟢 CONNECTED' : '🔴 DISCONNECTED'}
+              {connectionStatus === 'connected' ? 'CONNECTED' : 'DISCONNECTED'}
             </p>
           </div>
         </div>
       </header>
 
-      {currentCommand && (
+      {activePage === PAGE_COMMAND_CENTER && currentCommand && (
         <div className={`sticky top-0 z-30 border-b-4 shadow-xl backdrop-blur ${currentCommandTone.bannerClass}`}>
           <div className={`px-4 md:px-6 ${missionBannerCollapsed ? 'py-3' : 'py-4'}`}>
             <div className="flex flex-wrap items-start justify-between gap-4">
@@ -1449,7 +1523,8 @@ function App() {
         </div>
       )}
 
-      <main className="grid gap-4 p-4 auto-rows-max xl:grid-cols-[minmax(0,1.7fr)_minmax(20rem,1fr)]">
+      {activePage === PAGE_COMMAND_CENTER ? (
+        <main className="grid gap-4 p-4 auto-rows-max xl:grid-cols-[minmax(0,1.7fr)_minmax(20rem,1fr)]">
         <div className="min-w-0 space-y-4">
           <div className="w-full">
             <div className="w-full bg-gray-800 rounded border border-gray-700 p-4">
@@ -1940,7 +2015,10 @@ function App() {
             )}
           </CollapsiblePanel>
         </div>
-      </main>
+        </main>
+      ) : (
+        <ContestedRelayComparisonPage />
+      )}
     </div>
   )
 }
